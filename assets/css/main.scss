@@ -1,0 +1,151 @@
+---
+sitemap: false
+---
+
+/*
+ *
+ *  HPSTR
+ *
+ *  Designer: Michael Rose
+ *  Twitter: http://twitter.com/mmistakes
+ *
+ */
+
+// Partials
+@import "variables";
+@import "mixins";
+@import "reset";
+@import "vendor/font-awesome/font-awesome";
+@import "vendor/magnific-popup/magnific-popup";
+@import "site";
+@import "typography";
+@import "pygments";
+@import "coderay";
+@import "gist";
+@import "grid";
+@import "elements";
+@import "animations";
+@import "dl-menu";
+@import "page";
+
+#markdown-toc:before {
+  content: "文章目录";
+  font-weight: bold;
+}
+ul#markdown-toc {
+  list-style: none;
+  float: right;
+  background-color: white;
+  margin-bottom: 20px;
+}
+
+#h2outline{
+  font-size:14px;
+  // text-transform:uppercase;
+  margin:3px;
+  float:left;
+  margin-left:-12em;
+  width:9em;
+  text-align:right;
+  color:#fff;
+  cursor:pointer;
+  background:#222;
+  border:0;
+  outline:0;
+  box-shadow:0 12px 24px rgba(0,0,0,0.35);
+}
+#h2outline ul{-webkit-padding-start: 0px;padding:0px;}
+#h2outline a{display:block;padding:.7em 1em;color:#fff;}
+#h2outline a:hover{background-color:rgba(255,248,213,0.1);text-decoration:none;color:#fff;-webkit-transition:color .2s linear;}
+#h2outline .menu{display:none;}
+#h2outline li i {
+  display: inline-block;
+  width: 2em;
+}
+
+#h2outline li.h2_li{
+  margin-left:2px;
+  margin-top:6px;
+}
+
+#h2outline li.h3_li{
+  margin-left:8px;
+  font-size:12px;
+}
+
+#h2outline li.h4_li{
+  margin-left:14px;
+  font-size:10px;
+}
+
+// --------------------------------
+
+ #markdown-toc:before {
+  content: "文章目录";
+  font-weight: bold;
+}
+ul#markdown-toc {
+  list-style: none;
+  float: right;
+  background-color: white;
+  margin-bottom: 20px;
+}
+
+#main .article .categories {
+    width: 100%;
+    overflow: hidden;
+    margin: 20px 0;
+    padding-left: 0;
+}
+#main .categories .categories-item{
+  list-style-type: none;
+  background-color: #5bc0de;
+  border-color: #46b8da;
+  color: #fff;
+  margin: 10px 10px;
+  padding: 3px 20px;
+  float: left;
+  border-style: solid!important;
+  border-width: 2px!important;
+  -webkit-border-radius: 3px;
+  -moz-border-radius: 3px;
+  border-radius: 3px;
+}
+#main .categories .categories-item:hover {
+    color: #5bc0de;
+	background-color: #fff;
+}
+
+#main .categories .categories-item a span{
+	font-size: .625rem;
+	vertical-align: super;
+}
+#main article li code,#main article p code,#main article table code {
+color: #4d4d4d;
+background: #f8f8f8;
+padding: 0 0.2em;
+border: 1px solid #d8d8d8;
+border-radius: 3px 3px;
+position: relative;
+top: -2px;
+margin: 0 3px;
+box-shadow: 1px 1px 0 #999;
+}
+
+.dl-menuwrapper li i {
+  display: inline-block;
+  width: 2em;
+}
+
+h1, .h1, h2, .h2, h3, .h3, h4, .h4{
+  margin-top: 20px;
+  margin-bottom: 10px;
+}
+
+h3, .h3 {
+  font-size: 24px;
+}
+
+p {
+  margin: 0 0 10px;
+}
