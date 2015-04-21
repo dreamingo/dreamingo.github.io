@@ -64,6 +64,7 @@
 
 {% include scripts.html %}	        
 <script src="{{ site.url }}/assets/js/plugins/toc-aside.js"></script>
+{% if page.comments != false %}{% include disqus_comments.html %}{% endif %}
 
 </body>
 </html>

@@ -1,5 +1,5 @@
 *~
 *.swp
-_site
+_site/
 .sass-cache
 Gemfile.lock
