@@ -106,11 +106,11 @@ $$ p(\epsilon^{(i)}) = \frac{1}{\sqrt{2\pi}\sigma}exp(-\frac{(\epsilon^{(i)})^{2
 同时我们定义likelihood函数$L(\theta) = L(\theta;X, \overrightarrow{y}) = p(\overrightarrow{y}\mid{X;\theta})$..[似然函数可以理解为给定参数$\theta$和X，y出现的概率]。
 因此：
 
-<img src="{{site.url}}/images/linear_regression/likehood2.png" width="500px" />
+<img src="{{site.url}}/images/linear_regression/likelihood2.png" width="500px" />
 
 而所谓的**最大似然[maximum likelihood],则是意味着通过选择参数$\theta$，使得数据出现的概率尽可能的大**,而往往为了使得似然函数最大化，将其取log化是一般优化的方法之一;
 
-<img src="{{site.url}}/images/linear_regression/likehood3.png" width="500px" />
+<img src="{{site.url}}/images/linear_regression/likelihood3.png" width="500px" />
 
 从上图可以看出，要使得$\ell(\theta)$最大，即是要等式的后面部分$\sum_{i=1}^{m}(y^{(i)} - \theta^{T}x^{(i)})^{2}$尽可能的小。因此可以看出，这种基于最小二乘法（least-squares）的回归方法是对应于对$\theta$的最大似然估计上的。
 
