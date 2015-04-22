@@ -64,6 +64,16 @@
 
 {% include scripts.html %}	        
 <script src="{{ site.url }}/assets/js/plugins/toc-aside.js"></script>
+<!-- mathjax -->
+<script type="text/x-mathjax-config">
+MathJax.Hub.Config({
+  tex2jax: {inlineMath: [['$','$']]}
+});
+</script>
+<script type="text/javascript"
+  src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+</script>
+
 {% if page.comments != false %}{% include disqus_comments.html %}{% endif %}
 
 </body>

@@ -2,7 +2,7 @@
 layout: post
 title: "使用jekyll于github上搭建新博客"
 modified:
-categories: Geek折腾成果 
+categories: Linux&Geek
 description: 依靠github page搭建的新博客
 tags: [github,jekyll,markdown blog]
 image:
@@ -10,6 +10,7 @@ image:
   credit:
   creditlink:
 comments: true
+mathjax: false
 share:
 date: 2015-04-21T13:54:50+08:00
 ---
