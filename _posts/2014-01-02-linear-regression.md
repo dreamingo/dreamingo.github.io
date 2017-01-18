@@ -19,7 +19,7 @@ share:
 
 训练集表示如下：
 
-![example]({{site.url}}/images/linear_regression/examples.png)
+![example](/assets/images/linear_regression/examples.png)
 
 其中，在这里先定义若干符号：
 
@@ -49,8 +49,8 @@ $$ J(\theta) = \frac{1}{2}\sum_{i=1}^{m}{(h_{\theta}(x^{(i)}) - y^{(i)})}^2 $$
 **根据初始参数的不同，梯度下降方法有可能达到局部最优点，不一定达到全局最优点。**
 
 
-<img src="{{site.url}}/images/linear_regression/gd1.png" width="300px" />
-<img src="{{site.url}}/images/linear_regression/gd2.png" width="300px" />
+<img src="/assets/images/linear_regression/gd1.png" width="300px" />
+<img src="/assets/images/linear_regression/gd2.png" width="300px" />
 
 在做Gradient descent的时候，一般会进行`feature scaling`,即是将各个特征标准化，会有效加快梯度下降的速度，使得各个特征的下降速度不会相差过远。使其取值范围在$-1<= x <= 1$, 一般会使
 
@@ -63,13 +63,13 @@ $$ \theta_{j} := \theta_{j} - \alpha\frac{\partial}{\partial\theta_{j}}J(\theta)
 
 而其中，根据$h_\theta(x), \frac{\partial}{\partial\theta_{j}}J(\theta)$的推导如下：
 
-<img src="{{site.url}}/images/linear_regression/partial.png" width="500px" />
+<img src="/assets/images/linear_regression/partial.png" width="500px" />
 
 因此，$\theta$的更新公式为：$$ \theta_{j} := \theta_{j} - \alpha\sum_{i}^{m}(h_{\theta}(x^{(i)}) - y^{(i)})x_j^{(i)} $$
 
 上面提到的，称为**`batch gradient descent`**,而一般在大规模机器学习中，更常用的则是**`SGD（stochastic gradient descent）`**，其算法如下：
 
-<img src="{{site.url}}/images/linear_regression/sgd.png" width="500px" />
+<img src="/assets/images/linear_regression/sgd.png" width="500px" />
 
 `batch gradient descent`[`GBD`]每次都必须使用所有的样本来更新每一个$\theta$，而`SGD`在一轮的迭代中，对比与`GBD`, 主要是少了$\sum$符号，每次只用一个训练样本更新所有的$\theta$。因此，在训练数据很大的时候，`SGD`速度上明显更加优先。（虽然`SGD`不是每次迭代得到的损失函数都向着全局最优方向， 但是大的整体的方向是向全局最优解的，最终的结果往往是在全局最优解附近。`SGD`通常`比batch gradient descent`更快**接近**$\theta$的最小值，要注意SGD也许永远都**不会收敛**于最小值，并且`SGD`中得到的$\theta$会一直徘徊在$J(\theta)$最小值附近，但是在实际应用上，接近最小值的效果对比与最小值的效果，都已经足够的优秀了）
 
@@ -77,9 +77,9 @@ $$ \theta_{j} := \theta_{j} - \alpha\frac{\partial}{\partial\theta_{j}}J(\theta)
 
 如果损失函数是二次的话，那么这时候我们可以**矩阵求导**的方法快速求解出损失函数$J(\theta)$的最小值。具体推导过程如下：
 
-<img src="{{site.url}}/images/linear_regression/ne1.png" width="500px" />
+<img src="/assets/images/linear_regression/ne1.png" width="500px" />
 <br>
-<img src="{{site.url}}/images/linear_regression/ne2.png" width="500px" />
+<img src="/assets/images/linear_regression/ne2.png" width="500px" />
 
 上述的推断设计到大量的线性代数知识，有兴趣的同学可以参考这门课的lecture note1来进行推导。最终，我们可以求出$\theta = (X^{T}X)^{-1}X^{T}\overrightarrow{y}$
 
@@ -97,16 +97,16 @@ $$ p(\epsilon^{(i)}) = \frac{1}{\sqrt{2\pi}\sigma}exp(-\frac{(\epsilon^{(i)})^{2
 
 这意味着：
 
-<img src="{{site.url}}/images/linear_regression/likehood.png" width="400px" />
+<img src="/assets/images/linear_regression/likehood.png" width="400px" />
 
 同时我们定义likelihood函数$L(\theta) = L(\theta;X, \overrightarrow{y}) = p(\overrightarrow{y}\mid{X;\theta})$..[似然函数可以理解为给定参数$\theta$和X，y出现的概率]。
 因此：
 
-<img src="{{site.url}}/images/linear_regression/likelihood2.png" width="500px" />
+<img src="/assets/images/linear_regression/likelihood2.png" width="500px" />
 
 而所谓的**最大似然[maximum likelihood],则是意味着通过选择参数$\theta$，使得数据出现的概率尽可能的大**,而往往为了使得似然函数最大化，将其取log化是一般优化的方法之一;
 
-<img src="{{site.url}}/images/linear_regression/likelihood3.png" width="500px" />
+<img src="/assets/images/linear_regression/likelihood3.png" width="500px" />
 
 从上图可以看出，要使得$\ell(\theta)$最大，即是要等式的后面部分$\sum_{i=1}^{m}(y^{(i)} - \theta^{T}x^{(i)})^{2}$尽可能的小。因此可以看出，这种基于最小二乘法（least-squares）的回归方法是对应于对$\theta$的最大似然估计上的。
 

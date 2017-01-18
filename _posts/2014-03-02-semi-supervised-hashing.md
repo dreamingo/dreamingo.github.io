@@ -56,7 +56,7 @@ $$
 在这里，首先给出一些相关的定义：首先，给定n个数据样本，$$\chi = \{ \textbf{x}_{i} \} $$, $$i$$ = 1...n; $$\textbf{x}_{i} \in R^{D}$$。并且，其中的一部分数据样本
 标注了相关的类别信息$$\mathcal{M}和\mathcal{C}$$。其中，如果$$(\textbf{x}_{i}, \textbf{x}_{j} ) \in \mathcal{M}$$，则表示他们是相邻的一对。同理，如果$$(\textbf{x}_{i}, \textbf{x}_{j} ) \in \mathcal{C}$$，则表示他们不太相似，或者有不同的类别标签。假设其中有$$l$$个数据点属于$$\mathcal{M}或者\mathcal{C}$$，则可以定义$$S$$矩阵（$l$ × $l$）如下：
 
-<img src="{{site.url}}/images/semi_supervised_hashing/S_matrix.png" width="400px"/>
+<img src="/assets/images/semi_supervised_hashing/S_matrix.png" width="400px"/>
 
 #### [Empirical Fitness]
 
@@ -74,7 +74,7 @@ $$
 
 将$$\textbf{H} = [h_{1} ..., h_{k}]$$表示为K个对应的哈希函数，而$$\textbf{W} = [w_{1} ... w_{K}]  \in R^{D × K}$$。在这里，我们希望通过学习出一个$$\textbf{W}$$，对于哪些$$(\textbf{x}_{i}, \textbf{x}_{j} ) \in \mathcal{M}$$，学习出相同的bits，而对于那些$$(\textbf{x}_{i}, \textbf{x}_{j} ) \in \mathcal{C}$$的样例，则最好学出不同的bits。因此，根据经验风险最小化的原则，我们定义其目标函数为：
 
-<img src="{{site.url}}/images/semi_supervised_hashing/j_function.png" width="500px"/>
+<img src="/assets/images/semi_supervised_hashing/j_function.png" width="500px"/>
 
 而我们想要的，则是得到一些列的哈希函数$$\textbf{H}$$， 以此最大化目标函数。不是一般性的，我们可以将其表示为矩阵的形式（其中，tr表示矩阵的trace，一般为方阵的对角线元素之和）：
 
@@ -107,11 +107,11 @@ $$
 
 由于sgn函数的存在导致该项再一次不可导，因此，消除sgn函数的作用域并且一些列的证明后，得到最终的正则化项：
 
-<img src="{{site.url}}/images/semi_supervised_hashing/r_function.png" width="500px"/>
+<img src="/assets/images/semi_supervised_hashing/r_function.png" width="500px"/>
 
 并且得到最终的目标函数：
 
-<img src="{{site.url}}/images/semi_supervised_hashing/objective_function.png" width="500px"/>
+<img src="/assets/images/semi_supervised_hashing/objective_function.png" width="500px"/>
 
 ### Projection Learning
 
@@ -143,7 +143,7 @@ $$
 
 在上面的一种方法中，我们要求投影方向正交化从而是每个bit的信息量足够的多。然后，在实际应用上，数据集的大部分方差只是集中在很少的几个方向（例如在PCA分解后，$$\lambda_{1}远大于\lambda_{2}$$，所有特征值的总和主要由前几个特征值贡献，导致方差只是几种在几个方向上）。因此，我们可以将[投影方向正交化]这个限制去掉，令其选择新方向的时候，不一定要正交于之前的方向，而是选择较大着。而投影正交化这个约束则可以转化成一个乘法因子。使得新的约束函数如下：
 
-<img src="{{site.url}}/images/semi_supervised_hashing/j_function2.png" width="500px"/>
+<img src="/assets/images/semi_supervised_hashing/j_function2.png" width="500px"/>
 
 新的目标函数有对非正交特性的一定容忍度（取决于正的惩罚因子$$\rho$$）。然而，以上的目标函数却是非凸函数，不像之前的方法有比较简单快捷的方法快速找到
 全局最优解。为了最大化目标函数，我们首先对目标函数进行求导并且令其为0（如果矩阵运算薄弱可以参考两个文章[Properties of the Trace and Matrix Derivatives](http://www.cs.berkeley.edu/~jduchi/projects/matrix_prop.pdf), [Matrix Calculus](http://www.atmos.washington.edu/~dennis/MatrixCalculus.pdf)）
