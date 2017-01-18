@@ -1,65 +1,49 @@
-title:            Dreamingo's Blog
-description:      大智若愚，愚有大志(Stay Hungry. Stay Foolish)
-disqus_shortname: dreamingo
-reading_time:     true
-words_per_minute: 200
-# Your site's domain goes here (eg: //mmistakes.github.io, http://mademistakes.com, etc)
-# When testing locally leave blank or use http://localhost:4000
-url: http://www.dreamingo.com
-# url: 
+# Basic
+title: Dreaming.O
+subtitle: 大智若愚，愚有大志
+# welcome_message: <a href="https://github.com/onevcat/vno-jekyll" target="_blank">Download the theme</a>
+description: 记录探索路上的点滴
+creator: <a href="http://www.dreamingo.com">@dreamingo</a>
 
-# Owner/author information
-owner:
-  name:           Dreaming.O
-  avatar:         avatar.jpg
-  bio:            "Young Coder"
-  email:          dreamingo.ozm@gmail.com
-  # Social networking links used in footer. Update and remove as you like.
-  zhihu:          qu-zhan-ming       
-  weibo:          1957829952       
-  github:         dreamingo
-  # google plus id, include the '+', eg +mmistakes
-  google_plus:    +yourid
+url: "http://www.dreamingo.com"
 
-# Background image to be tiled on all pages
-background: 
+permalink: /:year/:month/:title/
 
-# Analytics and webmaster tools stuff goes here
-google_analytics:   
-google_verify:      
-# https://ssl.bing.com/webmaster/configure/verify/ownership Option 2 content= goes here
-bing_verify:         
+# Format
+highlighter: plain
+markdown: kramdown
 
-# http://en.wikipedia.org/wiki/List_of_tz_database_time_zones
-timezone:    Asia/Shanghai
-future:      true
-highlighter: pygments
-markdown:    kramdown
-gems:
-  - jekyll-sitemap
-sass:
-  sass_dir: _sass
-  style: compressed
+# supported colors: blue, green, purple, red, orange or slate. If you need clear, leave it empty.
+cover_color: red
 
-# https://github.com/mojombo/jekyll/wiki/Permalinks
-permalink:   /:categories/:title/
+# The blog button should not be removed.
+blog_button:
+    title: 博客
+    description: Visit blog
 
-# Amount of post to show on home page
-paginate: 5
+# Navigation buttons in the front page.
+nav:
+    # - {title: Projects, description: My Projects, url: 'http://project.onevcat.com'}
+    # - {title: Another Button, description: A button, url: 'http://example.com'}
 
-kramdown:
-  auto_ids: true
-  footnote_nr: 1
-  entity_output: as_char
-  toc_levels: 1..6
-  use_coderay: true
+# Pagination
+gems: [jekyll-paginate]
+paginate: 10
+paginate_path: "page/:num/"
 
-  coderay:
-    coderay_line_numbers: nil
-    coderay_line_numbers_start: 1
-    coderay_tab_width: 4
-    coderay_bold_every: 10
-    coderay_css: class
+# Comment
+comment:
+    # disqus: vno-jekyll
+    duoshuo: dreamingo
+    
+# Social
+social:
+    # zhihu: qu-zhan-ming
+    weibo: 1957829952
+    github: dreamingo
+    mail: dreamingo.ozm@gmail.com
 
-include: [".htaccess"]
-exclude: ["lib", "config.rb", "Capfile", "config", "Gemfile", "Gemfile.lock", "README.md", "LICENSE", "log", "Rakefile", "Rakefile.rb", "tmp", "less", "*.sublime-project", "*.sublime-workspace", "test", "spec", "Gruntfile.js", "package.json", "node_modules"]
+# Google Analytics
+ga:
+    # id: your_ga_id
+    # host: your_host

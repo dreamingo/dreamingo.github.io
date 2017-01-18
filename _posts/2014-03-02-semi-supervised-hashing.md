@@ -4,20 +4,16 @@ title: "论文笔记:Semi-Supervised Hashing"
 modified:
 categories: 机器学习与数据挖掘
 description:
-tags: [Machine Learning, Hashing Semi-Supervised, CBIR]
-image:
-    feature: abstract-3.jpg
-    credit:
-    creditlink:
+tags: [Machine Learning  Hashing Semi-Supervised]
 comments: true
-mathjax: false
+mathjax: true
 share:
 ---
 
 
 此文主要对论文[_Semi-Supervised Hashing for large Scale Search_](http://sanjivk.com/SSH_PAMI_final.pdf)的理解以及整理。
 
-###Introduction
+### Introduction
 
 在信息爆炸的时代，基于图片的检索（Content based image retrieval CBIR）得到了大量的需求和关注。通常在CBIR中，给出一个visual query q，返回与其**大约**（权衡效率和精度的情况下，没必要一定要找最相近的）最相近的邻居集合（ANN - Aproximate nearest neighbors）。
 
@@ -96,7 +92,7 @@ $$
 J(\textbf{W}) =  \frac{1}{2} \textbf{tr}\{\textbf{W}^{T}\textbf{X}_{l}\; \textbf{S} \; \textbf{X}_{l}^{T}\textbf{W} \} \\\
 $$
 
-####[Information Theoretic Regularization]
+#### Information Theoretic Regularization
 
 仅仅对这些有标记的小量数据做经验最小化的训练会导致严重的overfitting。为了得到泛化能力更好的模型，我们应该对目标函数加入正则化项。在正则化中，我们可以
 运用的不仅仅是标记的数据，也可以运用无标记的数据（Semi-Supervised learning paradigm）。
@@ -117,11 +113,11 @@ $$
 
 <img src="{{site.url}}/images/semi_supervised_hashing/objective_function.png" width="500px"/>
 
-###Projection Learning
+### Projection Learning
 
 接下来，将介绍三种方法来学习投影矩阵$$\textbf{W}$$
 
-####[Orthogonal Projection Learning]
+#### Orthogonal Projection Learning
 
 我们希望学习出来的哈希码，每个bit能够包含足够多的信息，并且希望没有冗余的bit（尽可能减少哈希码的位数），一个有效的方法是是的投影的方向相互正交
 （类似与PCA分解，使得投影方向相互正交从而投影出来的数据方差最大，信息量足够大）：
@@ -143,7 +139,7 @@ $$
 
 其中，$$\lambda_{1} > \lambda_{2} > ... > \lambda_{K}$$，并且$$W = [e_{1} ... e_{K}]$$，其中$$e_{k}$$表示对应的特征向量。
 
-####[Non-Orthogonal Projection Learning]
+#### Non-Orthogonal Projection Learning
 
 在上面的一种方法中，我们要求投影方向正交化从而是每个bit的信息量足够的多。然后，在实际应用上，数据集的大部分方差只是集中在很少的几个方向（例如在PCA分解后，$$\lambda_{1}远大于\lambda_{2}$$，所有特征值的总和主要由前几个特征值贡献，导致方差只是几种在几个方向上）。因此，我们可以将[投影方向正交化]这个限制去掉，令其选择新方向的时候，不一定要正交于之前的方向，而是选择较大着。而投影正交化这个约束则可以转化成一个乘法因子。使得新的约束函数如下：
 
@@ -167,7 +163,7 @@ $$
 W = LU^{k}
 $$
 
-####[Sequential Projection Learning]
+#### Sequential Projection Learning
 
 对于第三种求投影向量的方法，这里就无力叙述了。方法比较直观明了（类似于boost方法），大家可以直接参考论文。
 

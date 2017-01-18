@@ -4,13 +4,9 @@ title: "Standford公开课《机器学习》笔记 - Linear regression"
 modified:
 categories: 机器学习与数据挖掘
 description:
-tags: [Standford, Machine Learning, Linear regression]
-image:
-    feature: abstract-5.jpg
-    credit:
-    creditlink:
+tags: [Machine Learning  LinearRegression]
 comments: true
-mathjax: false
+mathjax: true
 share:
 ---
 

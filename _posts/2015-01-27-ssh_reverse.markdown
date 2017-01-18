@@ -100,7 +100,7 @@ ssh -X username_of_A@localhost -p2345
 {% endhighlight %}
 
 
-###参考文献
+### 参考文献
 
 * [SSH反向连接及Autossh](http://7177526.blog.51cto.com/7167526/1391328)
 * [How to forward X over SSH from Ubuntu machine?](http://unix.stackexchange.com/questions/12755/how-to-forward-x-over-ssh-from-ubuntu-machine)

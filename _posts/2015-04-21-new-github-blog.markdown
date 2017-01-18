@@ -4,25 +4,22 @@ title: "使用jekyll于github上搭建新博客"
 modified:
 categories: Linux&Geek
 description: 依靠github page搭建的新博客
-tags: [github,jekyll,markdown blog]
-image:
-  feature: abstract-2.jpg
-  credit:
-  creditlink:
+tags: [github jekyll markdown blog]
 comments: true
 mathjax: false
 share:
 date: 2015-04-21T13:54:50+08:00
 ---
 
-在这之前,和同学合租了一个香港的VPS,在上面利用`Python-django`搭建了自己海贼王风格的技术博客，用于记录自己点滴的技术成果及阅读总结。因为本人是个海贼王迷，该博客是大三那年心血来潮搭建的，其中后端逻辑的处理，前端构建，海贼王素材收集，P图等，都是当时辛辛苦苦完成的。那是一个令我相当满意和自豪的博客。
+在这之前,和同学合租了一个香港的VPS,在上面利用 `Python-Django` 搭建了自己海贼王风格的技术博客，用于记录自己点滴的技术成果及阅读总结。因为本人是个海贼王迷，该博客是大三那年心血来潮搭建的，其中后端逻辑的处理，前端构建，海贼王素材收集，P图等，都是当时辛辛苦苦完成的。那是一个令我相当满意和自豪的博客。
 
-无奈天有不测之风云，于数天前,可恶的VPS供应商(当时我们贪便宜在淘宝联系的卖家)告知服务器遭受攻击，内容全部被清空。这真是令我欲哭无泪。幸好一些当年的笔记的`markdown`草稿还在本地留下。才不至于损失惨重。
+无奈天有不测之风云，于数天前,VPS供应商(当时贪便宜在淘宝联系的卖家)告知服务器遭受攻击，内容全部被清空。这真是令我欲哭无泪。幸好一些当年的笔记的 markdown 草稿还在本地留下。才不至于损失惨重。
 
 吸取了上次的教训，也感觉无力再折腾了。于是就利用`github page`提供可靠的服务，决定在上面利用`jekyll`搭建新的博客。
 
 <figure>
-	<a href=""><img src="{{site.url}}/images/new-blog/old-blog-2.png" alt=""></a>
+	<!--- <a href=""><img src="{{site.url}}/images/new-blog/old-blog-2.png" alt=""></a> --->
+	<a href=""><img src="/assets/images/old_blog/old-blog-2.png" alt=""></a>
 	<figcaption><a href="" title="My old blog">旧博客(www.dreamingo.com:9999) - 遗照</a>.</figcaption>
 </figure>
 
@@ -47,39 +44,37 @@ ready-to-publish static website suitable for serving with your favorite web serv
 
 ### 基于Github Page安装Jekyll
 
-强烈建议在您的电脑上安装Jekyll，以便在把博客更新到GitHub Pages 仓库前，能够先预览一下网站，找出内容上可能的错误或者因程序出错引起的编
+强烈建议在您的电脑上安装 Jekyll，以便在把博客更新到 GitHub Pages 仓库前，能够先预览一下网站，找出内容上可能的错误或者因程序出错引起的编
 译错误等问题。
 
-幸运的是，可以通过使用 the GitHub Pages Gem 以及 GitHub Pages 的依赖组件系统，我们可以很简单的在电脑上安装Jekyll 并很
-大程度上匹配`GitHub Pages`的设置。
-
-安装Jekyll 能简单到什么程度？其实，你只需完成下面的几个步骤就OK了：
+幸运的是，可以通过使用 the GitHub Pages Gem 以及 GitHub Pages 的依赖组件系统，我们可以很简单的在电脑上安装 Jekyll 并很
+大程度上匹配 GitHub Pages 的设置。
 
 #### 安装Ruby
 
-1. Jekyll 运行在`Ruby` 上，所以，你懂的！如果你使用Mac，你电脑分分钟已经安装了Ruby。打开终端，运行一下命令即可知道有没有安装Ruby，以及Ruby 的版本：`ruby --version`. GitHub Pages 需要Ruby 的版本至少是 `1.9.3` 或者 `2.0.0`。如果你已经满足上面Ruby 的条件，可以直接跳到第二个步骤了，
+1. Jekyll 运行在`Ruby` 上，如果你使用Mac，则很可能已经安装了Ruby。打开终端，运行一下命令即可知道有没有安装Ruby，以及Ruby 的版本：`ruby --version`. GitHub Pages 需要Ruby 的版本至少是 `1.9.3` 或者 `2.0.0`。如果你已经满足上面Ruby 的条件，可以直接跳到第二个步骤了，
 否则，看看[这些文章](https://www.ruby-lang.org/en/downloads/)去安装Ruby 吧!
+2. 运行命令 `sudo gem install jekyll`来安装 jekyll 吧；
 
-#### 安装Bundler
+#### 安装Bundle
 
-Bundler 是Ruby 上一个组件包版本管理的利器。你想在本地上安装 `GitHub Pages` 的环境，安装`Bundler`就很有必要了！可以通过以下命令完成安装：
+Bundle 是Ruby 上一个组件包版本管理的利器。你想在本地上安装 `GitHub Pages` 的环境，安装`Bundler`就很有必要了！可以通过以下命令完成安装：
 
 {% highlight bash %} 
-gem install bundler。
+gem install bundle
 {% endhighlight %} 
 
-值得注意的一点是由于网络原因，从`rubygems.org`下载gem文件速度非常缓慢，甚至间歇性连接失败。所以可以修改gem源为`ruby.taobao.org`.详细的
+值得注意的一点是由于网络原因，从`rubygems.org`下载gem文件速度非常缓慢，甚至间歇性连接失败。所以可以修改gem源
+为`https://gems.ruby-china.org/`.详细的
 官方document，可以参考[RubyGems镜像](http://ruby.taobao.org/).
 
 {% highlight bash %} 
 {% raw %} 
-$ gem sources --remove https://rubygems.org/
-$ gem sources -a https://ruby.taobao.org/
+gem sources --add https://gems.ruby-china.org/ --remove https://rubygems.org/
 $ gem sources -l
-\*\*\* CURRENT SOURCES \*\*\*
-
-https://ruby.taobao.org
-# 请确保只有 ruby.taobao.org
+*** CURRENT SOURCES ***
+https://gems.ruby-china.org
+# 请确保只有 gems.ruby-china.org
 {% endraw %} 
 {% endhighlight %} 
 
@@ -88,8 +83,10 @@ https://ruby.taobao.org
 
 你需要在网站的根目录创建一个名为Gemfile的文件，并在里面添加： 
 {% highlight bash %} 
-source 'http://ruby.taobao.org/'
+source 'https://gems.ruby-china.org'
 gem github-pages
+gem jekyll
+gem jekyll-paginate
 
 {% endhighlight %} 
 
@@ -97,7 +94,7 @@ gem github-pages
 
 #### 运行Jekyll
 
-为了更好的模拟`GitHub Pages`的编译环境，最好使用`Bundler`来运行`Jekyll`。在网站的根目录下运行以下命令来运行`Jekyll`：
+为了更好的模拟`GitHub Pages`的编译环境，最好使用`Bundle`来运行 Jekyll 。在网站的根目录下运行以下命令来运行 Jekyll 服务器：
 
 {% highlight bash %} 
 bundle exec jekyll serve
@@ -118,22 +115,21 @@ bundle update
 
 * * * 
 
-### 新主题HSPTR
-本博客使用主题[HPSTR](http://jekyllthemes.org/themes/hpstr/)。并且基于网友[Seeksky的博客](http://jinlaixu.net/)在`HPSTR`上的修改，我再稍作修改。
+### 新主题
+本博客使用主题[VNO-Jekyll](https://github.com/onevcat/vno-jekyll)。具体效果可以参考 [作者 OneV's Den 的博客](https://onevcat.com/)
 
-主要改进的地方：
-
-* 悬浮TOC（在Seeksky的基础上，增加了对三级，四级标题等支持）
-* 依然使用`pygments`作为代码高亮的处理。
-* 优化资源文件访问过慢的问题(详细请参考[优化Jekyll博客访问慢的问题](http://9leg.com/other/2015/01/15/optimization-of-jekyll-blog-access-slow-problem.html))：
-    + 将使用的`google-fonts`用360的公共库useso代替。
-    + 将`jquery`等资源镜像换位国内镜像文件。
-
-关于本主题的基础架构，以及`Theme Setup`,可以参考`HPSTR`的[Theme Setup](https://mmistakes.github.io/hpstr-jekyll-theme/theme-setup/)
+在上述模板的基础上，增加了对 mathjax 的支持，使得可以在博客中畅游的写公式了：
+1. 在 `./_includes/head.html` 中，加上对应的 JS 链接：
+``` html
+<script type="text/javascript"  
+   src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>  
+```
+2. 修改 `./_config.yml` 配置文件，将 Jekyll 解释器更改为 Kramdown，以支持 Latex 标记。增加一行：
+`markdown: kramdown` 即可；
 
 ### [Reference]
 
-+ [使用Jekyll在Github上搭建个人博客（环境搭建）](http://segmentfault.com/a/1190000000406011)
++ [用Jekyll搭建的Github Pages个人博客](http://www.jianshu.com/p/88c9e72978b4)
 + [基于GitHub Pages 安装Jekyll](http://blog.ssyog.com/blog/jekyll/install-jekyll-based-on-github-pages.html)
 + [Using Jekyll with Pages](https://help.github.com/articles/using-jekyll-with-pages/)
 + [Jekyll Document](http://jekyllrb.com/docs/home/)
