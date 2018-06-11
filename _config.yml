@@ -12,6 +12,8 @@ permalink: /:year/:month/:title/
 # Format
 highlighter: rouge
 markdown: kramdown
+# kramdown:
+#     # parse_block_html: true
 
 # supported colors: blue, green, purple, red, orange or slate. If you need clear, leave it empty.
 cover_color: slate
@@ -33,8 +35,8 @@ paginate_path: "page/:num/"
 
 # Comment
 comment:
-    # disqus: vno-jekyll
-    duoshuo: dreamingo
+    disqus: dreamingo
+    # duoshuo: dreamingo
     
 # Social
 social:
