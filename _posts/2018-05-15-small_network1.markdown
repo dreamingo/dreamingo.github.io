@@ -8,7 +8,7 @@ tags: [cnn deeplearning model_compress]
 comments: true
 mathjax: true
 share:
-date: 2018-03-15T13:54:50+08:00
+date: 2018-05-15T13:54:50+08:00
 ---
 
 <!--- {% include toc.html %} --->
