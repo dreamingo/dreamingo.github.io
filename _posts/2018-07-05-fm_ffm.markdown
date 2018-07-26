@@ -1,0 +1,188 @@
+---
+layout: post
+title: "CTR之路 - 因子分解模型：FM & FFM"
+modified:
+categories: 机器学习 
+description: "CTR学习之路：FM & FFM"
+tags: [CTR FM embedding]
+comments: true
+mathjax: true
+share:
+date: 2018-07-05T01:18:42+08:00
+---
+
+## 0x01. 前言
+在前面CTR的文章中，我们介绍了GBDT+LR的套路。在这其中，我们也隐隐约约的指出了GBDT的一些问题：
+
+> 基于树模型的算法适合于连续/值空间较小的离散数据，容易学习到高阶的组合。但是对于高度稀疏的数据，数据维度也特别大时，模型的学习效率很低（需要遍历所有的维度）和学习能力有限（受限于树深和树的颗数）。
+> 除此之外，树模型几乎无法学习到特征中出现很少或者没有出现过的特征组合。但是实际的应用中，特征之间的交联往往具有隐藏传递性。
+
+FM(Factorization Machine)是由2010年尚在日本大阪大学的德国学者 Stenffen Rendle 提出的一种算法。中文一般译为『因子分解机』。这个算法的本质是可以把所有的特征进行高阶组合，减少人工特征组合的工作，同时算法非常适合在高度稀疏的问题上进行求解。同时凭借着其线性复杂度的优势，在各大公司的大规模机器学习算法中有占据一席之地。本文旨在参考了众多引用资料后，尝试对其进行归纳总结，并且有些许自己的心得。
+
+## 0x02. 模型推演
+
+假设我们希望有一个模型能够对所有的特征进行二阶组合。那么在广义线性模型的前提下，模型的形式应该为：
+
+$$
+\begin{equation}
+\begin{aligned}
+
+y(x) = w_0 + \sum_{i=1}^{n}w'_ix_i + \sum_{i=1}^{n}\sum_{j=i+1}^{n}w_{ij}x_ix_j
+
+\end{aligned}
+\end{equation}
+$$
+
+其中我们可以看到，$$n$$是原始一阶特征的个数。$$w_0$$是全局 bias-term，而 $$w'_i$$是一阶特征的权重。$$w_{ij}$$ 则是二阶交叉特征的权重。
+可以看到模型的参数一共具有$$O(n^2)$$个。在 CTR 预估等问题上，由于特征多是 OneHotEncoding 的形式，特征数量非常的巨大。因此$$O(n^2)$$ 的参数是一个非常可怕的量级。
+
+除了**模型参数数量巨大**这一个缺点外，由于$$W$$矩阵元素之间是相互独立的。对于稀疏数据的求解，会出现如下的问题：
+
+1. 上式要求对于任意的 $$x_ix_j \neq 0 $$必须具有足够的样本，这样才会学出有意义的权重参数 $$w_{ij}$$。对于一个稀疏的训练数据，别说是充足的样本了，可能会存在很多没有同现过的特征组合。
+2. 与最开始提到的GBDT的缺点类似，这种利用显式参数$$w_{ij}$$来衡量特征交叉的形式，是无法学习出一些没有出现过的特征组合的。
+
+- - -
+
+FM 算法则是利用**低秩矩阵分解**技术，解决了上面提到的若干问题。
+
+由于参数矩阵$$W$$是一个实对称矩阵。因此实对称矩阵 $$W$$ 正定（至少半正定，这里假设正定）。根据矩阵的性质，正定矩阵可以分解
+(具体的证明过程可以参考文章[『一数一世界：正定矩阵及相关性质』](http://bourneli.github.io/linear-algebra/2016/10/21/linear-algebra-16-positive_definite.html))
+
+$$
+\begin{equation}
+\begin{aligned}
+W = Q \Lambda Q^T
+\end{aligned}
+\end{equation}
+$$
+
+这其中$$Q$$是正交的单位矩阵。而$$\Lambda$$是对角矩阵，且对角线元素均大于0($$\lambda_1 \geq \lambda_2 \geq ... \lambda_n \geq 0$$)。我们尝试将矩阵$$\Lambda$$分解为$$\Lambda = \sqrt{\Lambda}\sqrt{\Lambda}^T$$。那么上式的可以变为：
+
+$$
+\begin{equation}
+\begin{aligned}
+W &=  (Q\sqrt{\Lambda})(\sqrt{\Lambda}^TQ^T) \\
+  &= VV^T
+\end{aligned}
+\end{equation}
+$$
+
+理论上$$V$$应该是一个 $$n \times n$$ 的矩阵。但是我们可以在类似PCA的思想中，取前$$k$$大的的特征值。得到$$V_k \in R^{n \times k}$$：
+
+$$
+\begin{equation}
+\begin{aligned}
+W \approx  V_kV_k^T
+\end{aligned}
+\end{equation}
+$$
+
+据此，我们就可以得到 FM 算法中的二阶特征交叉的式子了：
+
+$$
+\begin{equation}
+\begin{aligned}
+
+y(\mathbf{x}) = w_0 + \sum_{i=1}^n w_ix_i + \sum_{i=1}^{n}\sum_{j=i+1}^{n}\mathbf{v_i}\mathbf{v_j}^Tx_ix_j
+\end{aligned}
+\end{equation}
+$$
+
+据此，模型复杂度由原来的$$O(n^2)$$变成$$O(kn)$$。在实际的应用中，$$k$$一般大约取值为几十到几百不等。
+
+FM算法通过将原来的矩阵$$W$$分解为隐含向量$$V$$的乘积。可以认为向量$$V_i$$是特征$$i$$的隐式向量。正是通过这种分解为特征embeded的形式，使得上面的提到的问题得到了有效的解决：
+
+1. 稀疏数据样本不足的问题：想要有效更新的向量$$v_i$$，只需要保证有充足的$$x_i$$即可。特征$$x_i$$的量是充足的，否则的话$$x_i$$就不会出现在特征列表中了。
+2. 隐含特征交叉的学习问题：通过为每个向量分解为隐含向量的形式能够有效的学习到未曾出现过的特征交互。例如：特征$$a, b$$的共现利用了向量 $$V_a$$ 更新到了$$V_b$$。而特征$$b, c$$的共现利用了向量$$V_b$$来更新到$$V_c$$。这样子隐含向量中$$V_a, V_c$$就间接的有了关联。从而使得他们的内积$$V_aV_c^T$$具有更加丰富的意义。
+
+## 0x03. 计算效率的优化
+单单直观的分析公式(5)，我们可以得到计算复杂度为$$O(kn^2)$$。这对比于 LR 这种 $$O(n)$$ 复杂度的模型有着很大的差距。 然而，作者在论文中通过一系列的公式变化。将计算复杂度降维线性的$$O(kn)$$
+
+$$
+\begin{equation}
+\begin{aligned}
+
+& \sum_{i=1}^{n}\sum_{j=i+1}^{n}\mathbf{v_i}\mathbf{v_j}^Tx_ix_j \\
+&= \frac{1}{2}  \sum_{i=1}^{n}\sum_{j=1}^{n}\mathbf{v_i}\mathbf{v_j}^Tx_ix_j - \sum_{i=1}^{n}\mathbf{v_i}\mathbf{v_i}^Tx_ix_i \\
+&= \frac{1}{2} (\sum_{i=1}^n\sum_{j=1}^{n}\sum_{f=1}^k v_{i, f}v_{j, f}x_ix_j - \sum_{i=1}^{n}\sum_{f=1}^{k}v_{i,f}v_{i, f}x_ix_i) \\
+&= \frac{1}{2} \sum_{f=1}^{k}((\sum_{i=1}^{n}v_{i,f}x_i) (\sum_{j=1}^{n}v_{j,f}x_j) - \sum_{i=1}^nv_{i,f}^2x_i^2) \\
+&= \frac{1}{2} ((\sum_{i=1}^nv_{i, f}x_i)^2 - \sum_{i=1}^nv_{i, f}^2 x_i^2)
+
+
+\end{aligned}
+\end{equation}
+$$
+
+上式的优化将原来$$O(kn^2)$$ 的复杂度优化到$$O(kn)$$，但是在实际的工程中，还是希望能够进一步的优化预估性能。
+在[知乎：严林的回答：factorization machine和logistic regression的区别？](https://www.zhihu.com/question/27043630/answer/159374527)中提到，
+利用 SIMD 指令做到近似 $$O(n)$$的水平。关于 SIMD指令，希望迟些有时间能够详细学习下并且在博客记录下相关的笔记：
+
+> FM的预估时间复杂度是，目前可以通过SIMD指令基本做到了近似，这里要感谢Intel的SSE、AVX和AVX2，以AVX2为例，一次可以操作256bit位宽，意味着在向量用float类型分解，k小于等于8时就是严格的，实际上k会大一些，比如64、128，这个时候一般会用到float的q2.13编码和AVX2的循环展开与流水拼接技术，尽量降低前面的常数因子（做得好的话，常数因子是完全可以降到1的）
+
+## 0x04. 训练和学习过程
+
+对于二分类问题，我们需要将FM模型输出放到 Sigmoid 函数 $$\theta$$ 中去。得到模型如下：
+
+$$
+y_c(x) = \theta(y(x))= \frac{1}{1+e^{-(w_0 + \sum_{i=1}^nw_ix_i + \sum_{i=1}^n\sum_{j=i+1}^n v_i^Tv_jx_ix_j)}}
+$$
+
+此时对于各种损失函数(常见的是logloss)，FM模型的梯度为：
+
+$$
+\begin{eqnarray}
+\frac{\partial}{\partial{\theta}} \widehat{y}(\mathbf{x}) &=&
+\begin{cases}
+1,& \text{if $\theta$ is $w_{0}$}\\
+        x_{i},& \text{if $\theta$ is $w_{i}$}\\
+        x_{i}\sum_{j=1}^{n}v_{j,f}x_{j}-v_{i,f}x_{i}^{2},& \text{if $\theta$ is $v_{i,f}$}
+\end{cases} \tag{4}
+\end{eqnarray}
+
+$$
+
+在上面的求导式子中，除了$$\sum_{j=1}^{n}v_{j, k}x_j$$外，其他的计算复杂度都是$$O(1)$$，但是前面的这项因为是依赖于$$j$$的，因此可以预先计算好并且复用。复杂度为$$O(n)$$,
+因为需要计算$$k$$个，所以总复杂度为$$O(kn)$$。最后整体的二项部分的复杂度仍为$$O(kn)$$。
+
+## 0x05. FFM(Field-aware Factorization Machine)
+
+FFM最初的概念来源于中国台湾大学的 Yu-Chin Juan 同学的思想。其在 FM 的基础上，针对每项特征引入了 Filed 的概念。论文中认为性质类似的特征可以归属在同一个Filed下。
+例如由一个Category-Feature OnehotEncode之后的 01 特征属于一个Filed。 
+
+在FM中每个特征由一个属于自己的隐含向量$$V_i$$，当这个特征需要和其他特征进行交叉时，便是求两者隐含向量的内积作为权重。FFM中指出，
+在FM算法中，每个特征$$i$$无论是和哪一个Filed的特征$$j$$进行交互，都用同一个隐含向量$$V_i$$，这种做法没有充分考虑特征之间的差异性，企图用一个向量衡量所有的关系。这导致模型的信息量不够。
+
+因此，FFM算法中在划分好特征的Filed后，令每个特征$$i$$针对每一个Field $$f_j$$，都产生一个不同的隐含向量$$V_{i, f_j}$$。因此，从数理的角度来看，如果有$$n$$个特征，分为$$f$$个filed。
+则整个模型的隐含向量共有$$nf$$个。每个隐含向量的维度为$$k$$。总空间复杂度为$$O(nfk)$$
+
+$$
+y(x) = w_0 + \sum_{i=1}^{n}w_ix_i + \sum_{i=1}^{n}\sum_{j=i+1}^{n}v_{i, f_j}v_{j, f_i}^Tx_ix_j
+$$
+
+每次两两特征进行交叉时，他们都分别挑选上针对对方所属Filed的隐含向量进行交互。其中值得注意的是，在FFM中，由于划分了Filed，信息量更加的充足，每个隐含向量的长度$$k$$远小于FM中的长度。在这里我企图用一个比较民科的比喻来描述这个算法：
+
+> FM算法好比一群年轻人两两之间出去玩耍，因为这群年轻人都只有一件衣服，因此无论他们和谁出去约会，穿得都是同一件衣服。
+> 因此这件衣服需要尽可能的端正（隐含向量的长度$$k$$足够大来包含更多的信息量。）。
+> 但是这样是不太合理的。和不同人出去就应该穿不同衣服嘛。和兄弟出去就应该穿球衣，和美女出去就应该穿得端庄。
+
+> 因此 FFM 算法的思想是将这群年轻人划分不同的Filed（兄弟、美女、长辈...），每个人根据不同的Filed准备一套不同的衣服。当他们和对应的Filed的人进行聚会，则从衣柜中拿出不同的衣服。这样子每件衣服就各有各的特色（隐含向量的长度就不需要那么长的，因为已经针对不同的Field有了差异化）
+
+### FFM的实现细节
+
+Yu-Chin Juan实现了一个C++版的FFM模型([LibFFM](https://github.com/guestwalk/libffm))。在参考文章[『美团技术团队 - 深入FFM原理与实践』](https://tech.meituan.com/deep_understanding_of_ffm_principles_and_practices.html)中有对其进行详细的介绍。我一来没有认真阅读过源码，而来别人珠玉在前，我也不献丑了。总的而言，代码中通过运用了一些小的技巧：
+
+1. 由于FM/FFM的主要适用场景是稀疏数据，因此利用Addative自适应学习速率的算法AdaDelta（可以参考本博客前面的[文章]()）。一定程度上加速了训练的过程。
+2. 利用了OpenMP的多核并行计算框架，实现了SGD的异步无锁并行版本Hogwild!算法。充分的利用计算资源，大大加快了SGD的训练速度。
+3. 利用SIMD CPU指令来加速矩阵内积的运算。
+
+## 0x06. 总结
+FM模型通过引入隐含的embeded向量来解决特征组合的问题。一定程度上解决了文章最开始提及GBDT算法所不能及的方面（大规模稀疏数据 & 隐含特征关联）。
+同时参数的预测和学习复杂度均是线性的，这在工业届中不失为一个优秀的选择。
+
+## 0x07. 引用
+
+1. [1][Factorization Machines](http://www.algo.uni-konstanz.de/members/rendle/pdf/Rendle2010FM.pdf)
+2. [2][Field-aware Factorization Machines for CTR Prediction](https://www.csie.ntu.edu.tw/~cjlin/papers/ffm.pdf)
+3. [3][因子分解机FM-高效的组合高阶特征模型](http://bourneli.github.io/ml/fm/2017/07/02/fm-remove-combine-features-by-yourself.html)
+4. [4][FM算法论文 Factorization Machines 阅读笔记](FM算法论文 Factorization Machines 阅读笔记)
+5. [5][知乎：factorization machine和logistic regression的区别？](https://www.zhihu.com/question/27043630)

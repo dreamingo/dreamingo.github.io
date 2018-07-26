@@ -4,7 +4,7 @@ title: "卷积神经网络-快而小的网络：MobileNetV2"
 modified:
 categories: DeepLearning
 description: "卷积神经网络-快而小的网络总结：MobileNetV2"
-tags: [cnn deeplearning model_compression]
+tags: [cnn dl model_compression]
 comments: true
 mathjax: true
 share:

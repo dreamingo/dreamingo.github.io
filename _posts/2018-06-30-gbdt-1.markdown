@@ -1,0 +1,295 @@
+---
+layout: post
+title: "CTR之路-基础篇：GBDT模型原理"
+modified:
+categories: 机器学习 
+description: "CTR学习之路：GBDT"
+tags: [CTR gbdt tree]
+comments: true
+mathjax: true
+share:
+date: 2018-06-30T17:54:50+08:00
+---
+
+## 0x01. 前言
+GBDT(Gradient Boosting Decision Tree)，在很多文献中又称为MART(Multiple Additive Regression Tree)。这两种命名方式都分别隐含着这个模型的背后原理。
+其中，Gradient Boosting 梯度提升是一种用于分类、回归和排序任务中的机器学习算法，属于 Boosting 算法中的一部分。
+通常的，我们将基于梯度提升的算法统称为GBM(Gradient Boosting Decision Machine)。理论上，GBM可以选择各种不同的学习算法作为基学习器。在实际应用中，
+决策树往往是被使用最为广泛的基学习器。这主要得益于决策树的一些优良品质：
+
+* 基于 if-then 的学习规则，易于理解，可解释性强。
+* 更少的特征工程。对数据维度、缺失值，异常值不敏感。并且能够自动化的组合多维特征。
+
+在进入主题前，本文主要从以下角度去组织：
+
+1. 何为 Gradient-Boosting 框架；
+2. Gradient-Boosting 如何处理回归、分类问题； 
+3. Gradient-Boostring Decision Tree如何工作。
+
+
+## 0x02. Gradient Boosting框架
+
+### 级联函数
+
+在常见的机器学习算法中，问题定义一般为：给定训练样本$$\mathbf{x} = \{x_1, ... x_n\}$$和对应的输出$$y$$，来估计/逼近模型函数$$\hat{F}(x)$$。
+我们在样本集得到最小化的 loss function 得到的函数，记为$$F^{*}(x)$$
+
+$$
+F^{*}(x) = \arg \min_{F}L(y, F(x))
+$$
+
+在Graident Boosting框架中，我们将函数$$F(x)$$定义为由多个子函数级联形式：
+
+$$
+F(\mathbf{x}, \{\beta_{m}, \mathbf{a}_m\}_1^{M}) = \sum_{i=1}^{M}\beta_{m}h(\mathbf{x}; \mathbf{a}_m)
+$$
+
+从优化的角度来看，上面函数级联的形式，我们难以一次性的求出所有子函数$$h(\mathbf{x}; \mathbf{a}_m)$$的最优解。为了解这一问题，我们可以
+使用前向分布算法（Forward Stagewise Algorithm）。因为级联函数的存在，我们可以每次在之前模型$$F_{m-1}$$的基础上，再学习一个基学习器$$h_{m}(x)$$。
+这个新学习的$$h_m(x)$$，能够有效的减少损失函数的值，逐步逼近优化目标函数。这种每次逐步贪心学习一个学习器的算法，我们称之为boosting。
+
+在上面的基学习器$$h_m(\mathbf{x}, \mathbf{a}_m)$$中，如果改基学习器是一个CART决策树，那么$$\mathbf{a}_m$$就包括了该决策树的所有参数（用何项分裂、分裂值多少、叶子节点权重等）
+
+### 优化方法
+
+有了上面前向分布算法，在第$$m$$次迭代中，在已有模型$$F_{m-1}$$的基础上，我们贪心的学习一个基学习器$$h_m(\mathbf{x}; \mathbf{a_m})$$，并企图通过学习这个基学习器，最小化目标损失函数。
+
+从梯度下降的角度来看，可以理解为当前子函数$$\beta_{m}h(\mathbf{x}; \mathbf{a_m})$$是最优解函数$$F^{*}(x)$$在梯度方向上贪心策略的一步最佳逼近。每一个级联的过程就等同于梯度下降中的一步。
+因此，我们可以通过梯度，得到子函数的参数估计*：
+
+$$
+\begin{equation}
+\begin{aligned}
+-g_{m}(\mathbf{x}_i) = -\lbrack \frac{\partial{L(y_i, F(\mathbf{x}_i))}}{\partial{F(\mathbf{x}_i)}} \rbrack_{F(x) = F_{m-1}(x)}
+\end{aligned}
+\end{equation}
+$$
+
+其中，我们在N个训练样本中所获得关于$$F_{m-1}(x)$$的最佳梯度$$-g_m = \{-g_m(x_i)\}_1^{N}$$是一个$$N$$维的向量，我们希望学习到子函数
+$$h_m(\mathbf{x};\mathbf{a})$$，在训练样本中的输出结果向量与这个最佳梯度尽可能的近似、平行
+(因为如果子函数$$h_m(\mathbf{x})$$学习得到的结果向量与负梯度平行的话，将该子函数和之前的模型$$F_{m-1}(\mathbf{x})$$级联起来，
+ 那么就相当于模型在损失函数最陡峭的地方前进了一步，逼近损失函数)。因此根据梯度信息，我们可以从以下式子解出子函数
+
+$$
+\begin{equation}
+\begin{aligned}
+\mathbf{a}_m = \arg \min_{\mathbf{a}, \beta}\sum_{i=1}^{N}[-g_m(\mathbf{x}_i) - \beta h(\mathbf{x}_i; \mathbf{a})]^2
+\end{aligned}
+\end{equation}
+$$
+
+有了梯度的下降方向，我们还需要通过 line-search 找到最佳的步长，希望能够沿着该最陡峭的方向到达所能及的最优点。
+但是在实际的应用中，这一步往往被合并的模型的参数中去了：
+
+$$
+\begin{equation}
+\begin{aligned}
+\rho_m = \arg \min_{\rho}\sum_{i=1}^{N}L(y_i, F_{m-1}(\mathbf{x}_i + \rho(\mathbf{x}_i; \mathbf{a}_m)))
+\end{aligned}
+\end{equation}
+$$
+
+那么，第$$m$$步的函数级联逼近就是：
+
+$$
+F_m(\mathbf{x}) = F_{m-1}(\mathbf{x}) + \rho_mh(\mathbf{x}; \mathbf{a}_m)
+$$
+
+
+### 框架总结
+
+顾名思义，整个框架主要分为Boosting和Gradient两部分。其中，我们定义模型的负梯度向量为 **pseudo-response:** $$\tilde{\mathbf{y}} = -g_m(\mathbf{x})$$。每一级级联过程中，
+我们通过最小化子函数结果和 **pseudo-response** 向量的结果，从而解出每一级的子函数：
+
+
+1. 级联函数的初始化：$${F_0}( {\bf{x}} ) = \arg {\min _\rho }\sum\nolimits_{i = 1}^N {L( {y_i,\rho } )}$$
+2. . $$For\;m = 1\;to\;M\;do:$$
+3. 对于每个样本$$x_i$$，求出 **pseudo-response**: $$\tilde{y_i} = -\lbrack \frac{\partial{L(y_i, F(\bf{x_i}))}}{\partial{F(\bf{x}_i)}} \rbrack_{F(\mathbf{x}) = F_{m-1}(\mathbf{x})}$$
+4. 求解子函数$$h_m(\mathbf{x})$$，令其逼近 **pseudo-response**，$$\mathbf{a}_m = \arg \min_{\mathbf{a}, \beta}\sum_{i=1}^{N}[\tilde{y_i} - \beta h(\mathbf{x}_i; \mathbf{a})]^2 $$
+5. 通过 line-search 方法，找到最佳步长：$$\rho_m = \arg \min_{\rho}\sum_{i=1}^{N}L(y_i, F_{m-1}(\mathbf{x}_i + \rho(\mathbf{x}_i; \mathbf{a}_m)))$$
+6. 级联模型：$$F_m(\mathbf{x}) = F_{m-1}(\mathbf{x}) + \rho_mh(\mathbf{x}; \mathbf{a}_m)$$
+7. .$$endFor$$
+
+
+## 0x03. Graident Boosting中的决策树
+
+我们前面主要介绍了Gradient Boosting的框架。那么，接下来主要介绍 GBDT 中 Decision Tree 的部分。
+
+决策树算法有很多，例如ID3， C4.5, CART等。在GBDT中，所使用的决策树算法是 CART（Classification and Regreesion Tree）。其中值得注意的是，在很多的教科书和网上教程中，都会先介绍分类树，
+因此对于GBDT而言，很多人会先入为主的认为里面的那个决策树都是个分类树。然而这是不对的，**在GBDT中，无论是分类问题还是回归问题，使用的都是回归树。**
+
+在这里先简单介绍下[CART算法](https://en.wikipedia.org/wiki/Decision_tree_learning)，其建树的主要框架和其他的算法并无异同，最主要的不同体现在以下两个方面：
+
+1. **使用 Gini系数 作为节点分裂的标准**：
+
+    * 对于分类问题：Gini系数反应样本的纯度。 $$Gini(D) = 1 - \sum_{k=1}^{K}p_k^2$$，可以简单理解为从样本数据中随机抽取两个样本，其类别标记不一致的概率。(1 - 两个样本标记一致的概率)
+    * 对于回归问题：Gini系数反应的样本的聚拢程度。通常用MSE（均方差）来表示：$$Gini(D) = E(\sum_{i=1}^{N}(x_i - \bar{x})^2)$$。
+    * 无论是分类还是回归问题，都是选择划分后 Gini 指数最小的属性作为最优划分属性。利用属性a来划分后的 Gini 指数：$$Gini\_index(D, a) = \sum_{v=1}^{V}\frac{\|D^v\|}{\|D\|}Gini(D^{v})$$
+
+2. **CART是一个二分决策树算法：**
+
+    * 对于连续变量，CART寻找连续变量中的一个切割点，将特征一分为二，生成两个子节点；
+    * 对于离散特征，CART将在选择特征是，将特征分为 **是第K个值** 和 **其他值** 两大类来进行划分，生成两个子节点。而不是类似C4.5等算法中一次性展开所有的子节点。
+
+简单的介绍完GBDT算法中的决策树后，我们接下来讨论怎么讲决策树算法融合到 Gradient-Boosting 算法框架中：
+
+我们都知道，决策树利用 if-else 规则，将特征空间不断的划分成互不相交的区域。这开始之前，我们先定义下如下的一些符号，以免之后对符号不太理解。
+
+* 假如该决策树生成了$$J$$个叶子节点，也就是将特征空间划分为 $$J$$ 个不连通区域。我们定义$$\{R_j\}^J_1$$表示生成的区域集合。
+* 我们令$$\gamma_j = \rho b_j$$，囊括了系数和步长，表示为第 $$J$$ 个叶子节点的输出值。
+* 我们定义$$1(\mathbf{x} \in R_j)$$是一个指示函数(indicator function)，当里面的条件为真时(样本$$\mathbf{x}$$落入到叶子节点$$R_j$$)，函数返回1，否则返回0
+
+综合考虑上面的Boosting Gradient的框架，我们可以得到函数的级联形式
+
+$$
+\begin{equation}
+\begin{aligned}
+F_m(\bf{x}) = F_{m-1}(\bf{x}) + \sum_{j=1}^J\gamma_{jm}1(\mathbf{x} \in R_{jm})
+\end{aligned}
+\end{equation}
+$$
+
+考虑到一颗决策树内，每个叶子的权重优化是相互之间独立的，因此，我们可以将每一次的级联（每生成一个决策树），
+拆成 $$J$$ 个小区域的优化。其中第$$m$$课子树的第$$j$$片叶子的值$$\gamma_{jm}$$定义为：
+
+$$
+\begin{equation}
+\begin{aligned}
+\gamma_{jm} = \arg \min_{\gamma}\sum_{\bf{x}_j \in R_{jm}}^{N}L(y_i, F_{m-1}(\mathbf{x}) + \gamma)
+\end{aligned}
+\end{equation}
+$$
+
+上面的式子，我们将决策树融入到GB的boosting式子中。对于决策树建树过程中节点的分裂，是基于基尼系数做出选择的。
+唯一需要我们求解的，正是每棵数目的叶子节点 $$\gamma_j$$ 的值。接下来我们就回归和分类问题，详细讨论下如何求解。
+
+## Ox04. GBDT中的分类&回归问题
+
+### Least-Square 最小均方差回归
+
+在回归问题中，我们最常见的损失函数就是 MSE(Mean Square Error) $$ L(\bf{y}, F(\bf{x})) = \sum_{i=1}^{N} \frac{1}{2} \times (y_i - F(\bf{x}_i))^2$$
+结合本文第二部分 Gradient Boosting 框架，需要有如下步骤：
+
+#### 1. 构建初始化决策树桩$$F_0(\bf{x})$$
+
+所谓的决策树桩，是只有一个根节点的决策树，对于所有训练样本，都是落在同一个叶子节点中，输出同样的值。因此：
+
+$$
+\begin{equation}
+\begin{aligned}
+\gamma_0 &= F_0(\bf{x}) = \arg {\min _{\gamma_0}}\sum\nolimits_{i = 1}^N L({y_i, \gamma_0}) \\
+&= \arg {\min _{\gamma_0}}\sum\nolimits_{i = 1}^N \frac{1}{2}({y_i - \gamma_0})^2
+\end{aligned}
+\end{equation}
+$$
+
+对于上式，我们令其导数为0，可以得到$$F_0 = \frac{1}{N}\sum_{i=1}^{N}y_i = \bar{y}$$。
+
+#### 2. 计算 **pseudo-response** $$\tilde{y_i}$$
+
+对于每个样本$$x_i$$，求出 **pseudo-response**: 从下式我们可以看到，在LS损失函数时，**pseudo-response**就是所谓的**残差**，也就是样本真实标记和模型上一次拟合的差值。
+
+$$
+\begin{equation}
+\begin{aligned}
+\tilde{y_i} &= -\lbrack \frac{\partial{L(y_i, F(\bf{x_i}))}}{\partial{F(\bf{x}_i)}} \rbrack_{F(\mathbf{x}) = F_{m-1}(\mathbf{x})} \\
+        &= y_i - F_{m-1}(\bf{x}_i)
+\end{aligned}
+\end{equation}
+$$
+
+#### 3. 计算叶子节点$$\gamma_j$$
+
+有了 **pseudo-response** 后，我们需要学习一颗决策树，去拟合这个残差。又因为决策树叶子节点的权重是相互之间独立的，因此，残差的拟合也可以独立分解到 $$J$$ 个叶子节点中去：
+
+$$
+\begin{equation}
+\begin{aligned}
+\gamma_{jm} &= \arg \min_{\gamma}\sum_{\bf{x}_j \in R_{jm}}^{N}(\tilde{y_i} - \gamma_{jm})^2 \\
+&= Avg_{(\bf{x}_i \in R_{jm})}(\tilde{y_i})
+\end{aligned}
+\end{equation}
+$$
+
+直观的可以看到，在LS损失函数的回归问题上，叶子节点的权重等于落入该叶子节点所有样本的 **pseudo-response** 的均值。这还是很好理解的。
+
+#### 4. 级联函数
+
+训练好一颗新的决策树后，我们需要将他和之前的模型进行融合。对于GBDT而言，就是针对每个训练样本$$x_i$$，每颗单独的决策树预测出对应的值，然后再将这些值累加起来：
+
+$$
+\begin{equation}
+\begin{aligned}
+F_m(\bf{x}) = F_{m-1}(\bf{x}) + \sum_{j=1}^J\gamma_{jm}1(\mathbf{x} \in R_{jm})
+\end{aligned}
+\end{equation}
+$$
+
+### 二分类问题
+
+在这里，我们先讨论二分类问题。在讨论CART时，我们谈论到，无论分类还是回归问题上，
+GBDT中的决策树都是回归树。那么，回归树是如何解决分类问题的呢？
+
+在前一篇介绍 LR 的文章中我们提到，可以利用Sigmoid函数将回归模型的输出压缩到0-1之间，
+这就表示了样本属于正类的标签。因此，在GBDT中，我们同样利用这个技巧：
+
+$$
+P(y=1 | \bf{x}_i) = \frac{1}{1 + e^{-F(\bf{x}_i)}}
+$$
+
+与对数几率回归一样，我们模型$$F(\bf{x}_i)$$所刻画的，正是样本的**对数几率(odds)**：
+
+$$
+F(\bf{x}_i) = log(\frac{P(y=1|\bf{x})}{P(y=0|\bf{x})})
+$$
+
+顺其自然的，二分类问题的 Loss Function，就是负二元的log似然函数：
+
+$$
+\begin{equation}
+\begin{aligned}
+L(\mathbf{y}, F) &= -\sum_{i=1}^{N}(y_ilog(P(\mathbf{x}_i)) + (1 - y_i)log(1 - P(\mathbf{x}_i))) \\
+&= -\sum_{i=1}^N(y_ilog(\frac{1}{1 + e^{-F}}) + (1 - y_i)log(\frac{e^{-F}}{1+e^{-F}})) \\
+&= -\sum_{i=1}^N((0 - y_ilog(1+e^{-F})) + log(\frac{1}{1+e^F}) - y_ilog(\frac{e^{-F}}{1 + e^{-F}})) \\
+&= -\sum_{i=1}^N(-y_ilog(1+e^{-F}) + -log(1+e^F) + y_iF + y_ilog(1+e^{-F})) \\
+&= -\sum_{i=1}^{N}(y_iF - log(1+e^F))
+ 
+\end{aligned}
+\end{equation}
+$$
+
+上面的公式看起来好像很麻烦，但是实际上主要就是利用$$log(x/y) = log(x) - log(y)$$和$$log(\frac{e^{-F}}{1 + e^{-F}}) = log(\frac{1}{1 + e^F})$$这两个小技巧进行化简。
+其中更神奇的是，我们对上面化简后的损失函数进行求导。更神奇的可以发现：在$$y$$取值为0，1的分类问题上（有些求解令$$y \in \{-1, 1\}$$），
+其导数也就是前面提及的 **pseudo-response**，居然和回归问题很像，也是标记值和预测值之间的残差！！
+
+$$
+\begin{equation}
+\begin{aligned}
+\frac{\partial{L(\bf{y}, F)}}{\partial{F}} = -\sum_{i=1}^{N}(y_i - log(\frac{1}{1 + e^{-F}}))
+\end{aligned}
+\end{equation}
+$$
+
+基础知识都准备好后，我们也可以直接开始套用GBDT的计算框架：
+1. 计算初始值$$F_0(\bf{x})$$，我们通过将$$F_0$$带入到上式(11)中并且令导数为0，可以得到$$P(y=1 \mid 0) = \bar{\bf{y}}$$，得到$$F_0 = log(\frac{\bar{y}}{1 - \bar{y}})$$
+2. 对于第$$m$$棵决策树，我们需要其计算 **pseudo-response**：其实式子（11）就是我们需要的 $$\tilde{y_i} = y_i - \frac{1}{1 + e^{-F_{m-1}(x_i)}}$$。
+3. 计算叶子节点的权重：$$\gamma_{jm} = \arg \min_{\gamma_{jm}}-\sum_{i=1}^{N}(y_i(F_{m-1}(x_i) + \gamma_{jm}) - log(1 + e^{F_{m-1}(x_i) + \gamma_{jm}})) $$。上式没有 closed formed solution，一般资料上用牛顿法来进行求解。得到：$$\gamma_{jm} = \frac{\sum_{x_i \in R_{jm}}\tilde{y_i}}{\sum_{x_i \in R_{jm}}(y_i - \tilde{y_i}) \times (1 - y_i + \tilde{y_i})}$$
+4. 函数级联：$$F_m(x) = F_{m-1}(x) + \sum_{j=1}^{J}\gamma_{jm}1(\in R_{jm})$$
+
+### 多分类
+
+对于多分类的情况，类别概率的预测也就是我们常说的Softmax函数 $$p_k(x) = \frac{e^{F_k(x)}}{\sum_{i=1}^{K}e^{F_i(x)}}$$。而损失函数就是常见的交叉熵损失函数。（不了解的可以参考上一篇的LR中关于多分类的讨论）。对于多分类问题，GBDT采取的是一对多的策略，也就是可以简单的理解，如果有$$K$$个类别的话，就训练$$K$$个GBDT子模型。在这里，我直接就贴出论文中关于多分类的伪代码：
+
+
+<figure>
+	<a href=""><img src="/assets/images/ctr_gbdt/1.png" alt="" width="700" heigh="700"></a>
+</figure>
+
+## 引用
+
+* [1]. [Friedman J H. Greedy Function Approximation: A Gradient Boosting Machine[J]. Annals of Statistics, 2000, 29(5):1189–1232](http://statweb.stanford.edu/~jhf/ftp/trebst.pdf)
+
+* [2]. [GBDT算法原理深入解析](https://yangxudong.github.io/gbdt/)
+* [3]. [Gradient Boosting Decision Tree[上篇]](http://mlnote.com/2016/09/24/gradient-boosting-decision-tree-1/)
+* [4]. [Gradient Boosting Decision Tree[下篇]](http://mlnote.com/2016/09/24/gradient-boosting-decision-tree-2/)
+* [5]. [GBDT原理与Sklearn源码分析-分类篇](https://blog.csdn.net/qq_22238533/article/details/79192579)

@@ -1,0 +1,156 @@
+---
+layout: post
+title: "CTR之路-GBDT特征转换+LR"
+modified:
+categories: 机器学习 
+description: "CTR学习之路：GBDT"
+tags: [CTR gbdt tree lr]
+comments: true
+mathjax: true
+share:
+date: 2018-07-02T18:38:11+08:00
+---
+
+## 0x01. 前言
+在前面介绍[LR]()的文章中我们提到，LR模型一直是CTR预估中的 benchmark 模型。由于其简单、易于并行化、可解释性强等优点被广泛使用。
+尽管在前面我们介绍了通过**连续数据离散化**、**特征交叉**等方式，为LR引入了非线性能力，但是这些人工交叉的方法，往往严重依赖于
+工程师的业务经验，同时耗费大量的精力，而且即使是优秀的工程师，有一些隐藏在茫茫数据大海中的特征组合也是难以遍历的。
+
+在前面我们也隆重的介绍过GBDT算法，细细的回想，发现GBDT算法是非常善于做**连续特征离散化**和**特征交叉**这项工作的。例如：
+* 连续特征该如何切割，切割称为多少份；
+* 选择哪些特征进行交叉；
+* 进行多少阶交叉？二阶or三阶；
+
+那么我们是否能够利用GBDT模型来与LR模型结合起来，利用算法的特性自动化的寻找特征的组合，从而使LR模型能够更上一层楼呢？
+
+
+<figure>
+	<a href=""><img src="/assets/images/ctr_lr/2.png" alt="" width="500" heigh="300"></a>
+</figure>
+
+接下来，我们以论文[『Pratical Lessions from Predicting Clicks on Ads at Facebook』](http://quinonero.net/Publications/predicting-clicks-facebook.pdf)作为引子，结合其他的一些参考资料，介绍这GBDT+LR的算法。
+
+## 0x02. 基础杂谈
+
+在正式开始之前，我先杂乱的介绍一些预备知识。毕竟这篇文章作为我第一篇进入CTR领域的文章，简要的记录下一些笔记还是有些必要的。
+
+### 基本概念
+
+#### Impression
+
+Impression在这里译为『展示量』，一个广告被展示了多少次，那么其计数就是多少。比如你刷新了一次网站页面，该网站上的所有广告的 Impression 就增加1，在刷新一次，就再加1（通常会过滤掉如robot爬虫的影响。）
+
+#### CTR
+
+CTR(Click Through Rate)，点击通过率，其中的Click是指该广告被点击的次数。那么CRT = Impression / Click；
+
+### 模型特征
+
+在在线广告系统中的Click-model，特征往往被定义为以下几部分：
+
+* **广告特征**（现在Or历史特征）：广告商ID/广告ID/该广告上周的CTR
+* **用户特征：** 人口调查数据特征（年龄、性别、职业、是否登录...）/该用户的历史CTR/过去一段时间内曾经点击过广告集合
+* **上下文特征：** 点击发生时的上下文信息，例如用户设备型号/当前所在的页面ID/当前时间点
+* **点击Feedback特征**
+
+### 模型评估方法
+
+CTR预估其实可以看做是一个简单的二分类问题。因此其离线的评估方式主要是以logloss和AUC为主。
+其中Logloss主要评估模型的精度，而AUC则更多关注在rank-order；
+
+针对Logloss，不同的业务场景也有一些不同的变种，例如在Facebook论文中提到的 Normalized-Entropy：
+
+$$
+NE = \frac{-\frac{1}{N}\sum_{i=1}^{n}(y_ilog(p_i) + (1-y_i)log(1-p_i))}{-(p*log(p) + (1-p)*log(1-p))}
+$$
+
+上式分母中的$$p$$可以理解为是训练样本中所有历史样本的平均CTR值。之所以要作这个归一化，是因为当训练数据中的Grouptruth CTR如果接近 0/1 时，训练模型更容易得到更好(小)的logloss，这样会导致不同的数据集中的logloss便没有可比性。归一化后的NE对历史CTR则没那么敏感，方便在不同的数据集上进行比对。
+
+### 负样本降采样&模型校准
+
+CTR预估是一个类别非常不平衡的二分类问题。在实际的数据中，正样本（被点击）往往占据总训练数据的1%不到的比例。为了让模型学习到更好的特性，我们往往需要对负样本进行降采样。在下图中，是Facebook论文中, 不同采样率$$w$$时模型的表现：
+
+<figure>
+	<a href=""><img src="/assets/images/gbdt_lr/sample.png" alt="" width="500" heigh="300"></a>
+</figure>
+
+降采样在起到提高模型性能的同时，起到了加快训练速度的效果（样本变少了）。但是预测时模型依然是处于降采样空间，因此需要对预测出来的概率进行校正（Calibrate）：
+
+$$
+q = \frac{p}{p + (1-p)/w}
+$$
+
+其中$$p$$是降采样空间中预测的概率，而$$w$$则是采样率。
+
+## 0x03. GBDT特征转换
+
+在论文中，利用一部分特征来训练一个GBDT模型，把模型中每棵树的叶子节点编号作为新的特征。假如到原始特征中，再利用LR来训练最终的模型：
+
+<figure>
+	<a href=""><img src="/assets/images/gbdt_lr/gbdt_feat.png" alt="" width="500" heigh="500"></a>
+</figure>
+
+上面的特征转换过程中，可以看做是每颗子树被当做是一个新的Category Feature。举一个例子，当一个新的训练样本被分配到GBDT模型时，在第一颗子树其位于叶子节点1，而第二颗子树中位于叶子节点2。则针对该训练样本就会诞生出新的特征$$[1,0,0,0,1]$$。
+
+GBDT够学习到高阶非线性的特征组合，对应着每颗子树的一条路径（从叶子节点到根节点的一条路径）。可以看到下图的这个例子。这个子树可以理解为特征『是否年轻』和『是否使用iPhone』的一个二阶融合的新类别特征。其中标红的路径，正是可以理解为『年轻且使用iPhone』形成的新特征。
+
+<figure>
+	<a href=""><img src="/assets/images/gbdt_lr/tree.png" alt="" width="250" heigh="250"></a>
+	<figcaption><a href="" title="saddle_point">决策树的特征交叉</a>.</figcaption>
+</figure>
+
+## 0x04. 细节探讨
+
+### 1. 为什么选择GBDT
+
+前面我们提到，决策树算法对连续特征划分和多阶特征交叉有着天生的优势。之所以选择GBDT，我认为有以下的优点：
+
+1. 多棵树的ensemble模型比起单科决策树而且更具有优势，表达能力也更强。多颗决策树的ensemble组合出的多种特征也从一定程度上增加了特征的信息量。
+
+2. 之所以使用GBDT而不是RF模型，是因为GBDT模型前面的树更着重于突出区分度强的特征，而后面的树则是进一步选择合适的特征来修正修正残差所带来的误差。这种优先选择区分度大的特征，然后再逐渐根据少量样本进一步选择适合的特征，思路更加合理和清晰。
+
+### 2. 投放哪些特征给GBDT模型
+
+在前面我们提到，一般情况下，我们更多是仅仅选择一部分特征给GBDT模型。为什么只是一部分特征呢？
+那么这一部分特征又该如何选择呢？一般情况下，我们选择：
+
+1. 连续值特征。
+2. 值空间不大的离散特征。
+
+对于第一点，这没什么好说的，因为树类算法根据信息增益/基尼系数等规则对连续值切割的优势。而第二点主要是因为决策树算法对值空间过大的离散特征（例如用户ID，单单这个特征可能已经上百万维）的切割效率（每次需要遍历所有值寻找切割点）和能力都不足。
+
+### 3. Why GBDT+LR
+
+为什么选择使用GBDT + LR，而不是仅仅利用GBDT，或者是抛弃原始特征，全部使用GBDT学习到的特征，再利用LR进行学习呢？
+
+在这里我们定义上面的几种算法，并结合引用文章[[2]](http://www.algorithmdog.com/xgboost-lr-more-feas)[[3]](http://bourneli.github.io/ml/2017/05/25/gdbt-lr-facebook-paper.html)，并作出自己的分析：
+
+* LR1: 利用原始属性特征和笛卡尔乘积的二阶交叉特征的LR模型
+* LR2: 仅仅利用原始特征的 LR 模型
+* XGBoost + LR1: XGBoost 的叶子节点特征、原始属性特征和二阶交叉特征一起给 LR 进行训练
+* XGBoost + LR2: XGBoost 的叶子节点给与 LR 进行训练。
+
+<figure>
+	<a href=""><img src="/assets/images/gbdt_lr/xgboost_lr.png" alt="" width="500" heigh="500"></a>
+	<figcaption><a href="" title="saddle_point">来自『XGBoost + LR 就是加特征而已』的结果图</a>.</figcaption>
+</figure>
+
+- - -
+
+* 对于最差的效果 LR2， 证明的纯线性模型的 LR 无法捕捉到特征中非线性的能力，因此效果是最差的。
+* XGBoost + LR2 效果也蛮差的，比XGboost还差，因为XGBoost新产生的特征中$$\hat{x}$$，可以理解为其对应的叶子节点的权重$$w$$其实已经在GBDT中学习好了(考虑GBDT的加法模型，并且每颗子树中产生的onehotEncoding编码的特征中只有一个是1，那么GBDT的结果：$$y = w^T\hat{x}$$)。如今利用 LR 重新学习一遍这个权重，那么效果肯定是会变差的。因为存在着偏差。
+
+* XGboost 比 LR1要差的原因主要是因为当输入给GBDT的特征非常多时（例如值空间很大的离散特征），Z这会导致GBDT无法充分的利用好所有的特征（考虑到树的深度和颗数）。因此仅仅使用GBDT的算法，在工业级别中特征非常多的情况下，情况要差于LR;
+
+* XGboost + LR1 的效果是最好的， 这个就不作解释了， 这不就是这篇文章要介绍的算法么。
+
+### 4. 学习速率的选择
+
+我们知道CTR是一个稀疏学习的问题。前面文章介绍[梯度优化算法]()时也介绍过，这种情况下，利用Addative的算法会更合适（例如Adam，AdaDelta等）。因为不同feature之间的不平衡性，应该赋予不同的学习速率来进行学习。
+
+## 0x05. 引用
+
+1. [1]. [Practical Lessons from Predicting Clicks on Ads at Facebook](http://quinonero.net/Publications/predicting-clicks-facebook.pdf)
+2. [2]. [XGBoost + LR 就是加特征而已](http://www.algorithmdog.com/xgboost-lr-more-feas)
+3. [3]. [GBDT特征转换+LR总结](http://bourneli.github.io/ml/2017/05/25/gdbt-lr-facebook-paper.html)
+4. [4]. [知乎：为什么 CTR 预估中，GBDT + LR 模型的效果要比单纯使用 GBDT 好呢？](https://www.zhihu.com/question/56797501)

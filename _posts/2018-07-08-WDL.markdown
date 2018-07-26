@@ -1,0 +1,111 @@
+---
+layout: post
+title: "CTR之路 - Wide & Deep Learning for Recommender Systems"
+modified:
+categories: 机器学习 
+description: "CTR之路 - Wide & Deep Learning for Recommender Systems"
+tags: [rank deep-learning recommender]
+comments: true
+mathjax: true
+share:
+date: 2018-07-08T11:28:42+08:00
+---
+
+论文 [Wide & Deep Learning for Recommender Systems](https://arxiv.org/pdf/1606.07792.pdf)是 Google利用神经网络和线性模型结合起来做推荐系统、CTR预估问题的一大力作。论文中提到Google内部将其作为 Google Play 商店推荐中的 Ranking 模块的打分模型。对于类似 Google 这种工业界发布的论文，特别是带有实际的项目 pratical lessons 的论文，真是应该好好读读。据网上不少各大算法工程师反应，该模型如今在他们所在的业务得到的广泛的额应用。
+
+## 0x01. 前言
+
+论文首先指出利用特征交叉的 LR 模型在 Memorizaton 方面比较有效并且可解释性强。而所谓的Memorizaton（记忆）是指模型利用(exploit)历史数据的**共现**规则，用于发觉历史数据中可用的关联，更注重用户过去的行为。在 LR 模型中，我们利用特征的多阶交叉（特征之间的的交叉 AND 操作，其实就是一个统计特征**交叉共现**的过程。）来实现 Memorizaton。但是 Memorizaton 对模型中没有出现过的特征组合是无法刻画出来的，比如模型有可能无法感知出 『马铃薯』和『土豆』是同一个实体。因此模型学习到用户A喜欢马铃薯，但是却有可能会以为该用户不喜欢土豆。
+
+而像 Embedding-based 模型（例如FM，DNN）都可以通过隐含向量来泛化(Generazation)、挖掘出隐含关系的转移性，更倾向于发掘出新的特征组合，有利于提高推荐物品的发散性(Diversiy)。但在论文中指出，这种隐含模型对于一些特殊兴趣或者小众爱好的用户，由于其query-item matrix非常的稀疏，学习不充分。然而最终预测时隐含向量的内积依然不会为0，这就会导致了所谓的 over-generalize。推荐出一些不怎么相关的物品。
+
+因此，将 Deep-model 和 Wide-model 结合起来，能够有效的弥补彼此之间的缺点。更有效的提高到推荐的效果。
+
+## 0x02 Recommender System Overview
+
+下图是论文中贴出的推荐系统架构图。可以看到的是，整个系统主要分为两部分：**候选集合生成系统（Retrieval）** 和 **评分排序系统(Ranking)**，其中：
+
+* **Retrieval**：在很多推荐系统中又称为 Candidate Generazation，Recall 或者 Matching 阶段。其主要作用是快速的在几十亿候选集合中选择出小量（几百到几千不等）的样本。这部分系统要求尽可能的快，因此一般会使用一些非常轻量级或者大部分运算可以在离线（offline）进行计算的算法（例如矩阵分解）等，并且最后将问题化简为在大规模数据中求 K-Nearest Neightbour 的问题。在论文中指出，他们主要是使用了 machine-learned models 和 human-defined 规则的结合。
+
+* **Ranking**：Ranking向来是各大算法的必争之地了。因为待排序集合较小，我们可以上大量的特征和重型的算法模型来准确的调整效果。而本文的 WDL 模型正是用于此部分模块中，为每个候选集合打出对应的评分（点击概率 or something else（例如视频推荐的话，预估出用户观看该视频的时长等））
+
+<figure>
+	<a href=""><img src="/assets/images/wdl/rs.png" alt="" width="700" heigh="500"></a>
+</figure>
+
+### 模型特征
+
+文中指出，输入的模型特征$$\mathbf{x}$$，主要包括以下的几点：
+
+* **User features:** 例如用户的国家、语言、年龄的人口特征数据以及历史的app数据等
+* **Contextual features:** 上下文数据，包括点击时的设备、时间点、所在页面等。
+* **Impression Feature:** APP的大小、类别、评价和历史数据等。
+
+## 0x03. Wide & Deep Learning
+
+在最开始提到，将 Deep-model(Deep) 和 LR(Wide-model) 结合起来，能够有效的弥补彼此之间的缺点。能够达到一个将过去知识不断记忆(Memorizaion)和泛化归纳(Generazation)的过程。
+
+<figure>
+	<a href=""><img src="/assets/images/wdl/wdl.png" alt="" width="800" heigh="400"></a>
+</figure>
+
+### Wide 模型：LR
+
+#### **1. 模型输入**
+
+论文中指出，宽度模型LR的输入，除了原始特征之外，还加入了特征的高阶组合。在文中称为**Cross-product transformation**。本质上就 Onehot-Encoding 后特征的 AND 组合，用于统计历史特征中的共现，同时增加了 LR 这种泛线性模型的非线性能力。
+
+其中值得注意的是，文章提到由于 Wide & Deep 模型是属于联合训练的模型，Wide模型时作为Deep模型的一个补充形式而存在的。**因此 Wide 模型并不需要所有原始特征**。在论文中，Wide 模型仅仅使用了 『User-installed APP』和 『Impression App』两个Categorical Feature以及他们的高阶组合特征作为输入。
+
+<figure>
+	<a href=""><img src="/assets/images/wdl/wdl2.png" alt="" width="500" heigh="400"></a>
+</figure>
+
+#### **2. 模型结构与优化**
+
+模型这一部分就没什么好说的啦，就是常见的线性模型。定义如下：
+
+$$
+f(\mathbf{x}) = w_{wide}^T[\mathbf{x}, \mathbf{\phi(\mathbf{x})}]
+$$
+
+其中,$$\phi(\mathbf{x})$$指的就是原始特征的高阶组合形式。而针对Wide部分，论文提出利用 [Follow-the-regularizaed-learder(FTRL)](https://static.googleusercontent.com/media/research.google.com/zh-TW//pubs/archive/37013.pdf)算法进行更新，以便支持online-learing。
+
+### Depp 模型：DNN
+
+#### **1. 模型输入**：
+
+对于离散特征，模型输入是原始高维的01向量。通过一个全连接层后，得到了低维的实数embedding向量。在论文中指出，针对每个Categorical Feature，DNN生成一个32维隐含embedding向量。然后再将所有的这些向量连接(Concatenated)起来。
+
+对于连续特征，在归一化后模型将其直接加入到前面已经连接的向量中，最后得到大约1200维的实数向量。
+
+#### **2. 模型细节**
+
+1. 在得到由连续变量和embedding向量连接起来的向量后，DNN将该向量作为输入到三个隐含层大小为1024，512，256带激活函数RELU的全连接层中。
+
+2. 由于要训练模型的embedding向量，输入数据稀疏为主，因此采取Addative学习方法，利用[AdaGrad]()来进行优化学习。
+
+### 联合训练
+
+最终，Wide & Deep 模型的输出加权起来，对于二分类问题，其这两个模型的加权和衡量的是结果的 log-odd是结果：
+
+$$
+f_{wide}([\mathbf{x'}, \mathbf{\phi(x')}]) + f_{deep}(\mathbf{x}) = log(\frac{p(y=1|x)}{p(y=0|x)})
+$$
+
+而模型的最终输出概率值为：
+
+$$
+P(Y=1|\mathbf{x}) = \frac{1}{1 + e^{-(f_{wide}([\mathbf{x'}, \mathbf{\phi(x')}]) + f_{deep}(\mathbf{x}))}}
+$$
+
+## 0x04. 结语
+
+Wide & Depp 模型通过结合两者的优势，令整体模型对训练数据无论是在发掘历史关联还是泛化特征上都有很好的表现。因此该模型在工业届上应用广泛。然而该模型也是有一些缺点的。例如 Wide & Deep 的部分结合略显生硬，特别是在 Wide 部分中还需要人工对输入特征做处理。两者之间并没有很好的交互。在近年来提出的一些模型，例如DeepFM，正是针对这些缺点作进一步处理的。
+
+
+## 0x05. 引用
+
+1. [1][Wide & Deep Learning for Recommender Systems](https://arxiv.org/pdf/1606.07792.pdf)
+2. [2][论文笔记 - Wide and Deep Learning for Recommender Systems](http://www.shuang0420.com/2017/03/13/%E8%AE%BA%E6%96%87%E7%AC%94%E8%AE%B0%20-%20Wide%20and%20Deep%20Learning%20for%20Recommender%20Systems/)
+3. [3][主流CTR预估模型的演化及对比](https://zhuanlan.zhihu.com/p/35465875)
