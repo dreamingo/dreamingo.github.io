@@ -1,0 +1,134 @@
+---
+layout: post
+title: "CTR之路 - 各式变种的DNN网络(FNN, NFM, PNN)"
+modified:
+categories: Machine Learning
+description: "CTR之路 - 各式变种的DNN网络"
+tags: [DNN CTR embedding]
+comments: true
+mathjax: true
+share:
+date: 2018-07-10T12:14:12+08:00
+---
+
+## 0x01. 前言
+
+顺着前面介绍 [WDL 的文章](http://dreamingo.github.io/2018/07/WDL/)，本文在这里再简单的介绍几篇在CTR领域中，针对 DNN 网络做进一步改进的论文。
+
+在开始之前，我想在这里针对前面在CTR领域中Embedding的方法（FM, FFM， DNN）作一定的讨论。FM算法作为在Embedding算法家族中的一员，尽管模型具有简单有效、自动特征交叉、线性时间的预测和训练速度，但是近年来风头还是被 DNN 类的方法盖过。当然在这其中也有历史进程发展的原因，但是对比之下，**FM类的方法还是有一些明显的缺点：**
+
+1. 考虑到时间的复杂度，主流的 FM 模型还是以二阶交叉为主，这导致模型无法有效的衡量多阶特征交叉的信息，多阶的FFM一方面计算复杂度高，而且模型性能提升也很有限。一定程度上令模型的表达能力受限。
+2. FM 模型实际上是一个浅层线性模型，对比与 DNN 网络在 embedding 之后还再通过叠加隐含层来增加模型的对非线性能力的刻画，这也令 FM 的表达能力再次受到了限制。
+3. FM 模型一定程度下更加倾向于离散数据的输入，而 DNN 模型则对于离散、连续特征更加的通用。
+
+
+## 0x02. Factorisation-machine supported Neural Networks (FNN)
+
+> **其实本文不算是 WDL 模型的改进，因为本文(11 Jan 2016)比WDL模型(24 Jun 2016)更早的提出。可以算是 DNN 模型在CTR领域中的一个尝鲜者。**
+
+Factorisation-machine supported Networks Networks(FNN)，从名字中我们就可以看出这个改进点是和FM算法有一定的关系。
+首先，论文指出了由于在CTR领域中，输入的稀疏数据维度往往而言都是非常巨大的，这导致了网络在第一层中（往往是embedding层）有着巨额的参数。
+
+例如输入的数据是一百万维的特征，假设隐含层数据有100个神经元，则第一层的参数就已经有一亿个了（尽管这个估计不太准确，应为embedding层往往是每个catagorical Feature局部连接的）。
+这导致了模型在训练上有着一定的困难。因为与NLP任务中的 word-embedding 方法相比，CTR模型中的multi-field的catagorical features不具备任何的如 world-alignment 和 letter-n-gram 先验数据结构知识。
+
+这个模型本身的想法非常的简单，因为 **FM 模型也能学习到特征的隐含向量，因此一个自然的思想就是能否先训练一个FM模型，
+然后利用学习到的隐含向量来初始化 DNN 模型的第一层参数。然后再利用数据对DNN模型进行 Fine-ture。**, 其中模型的结构图如下：
+
+<figure>
+	<a href=""><img src="/assets/images/dnn_ctr/fnn.png" alt="" width="700" heigh="500"></a>
+</figure>
+
+## 0x03. Neural Factorizaion Machines(NFM)
+
+论文 [Neural Factorizaion Machines for Sparse Predictive Analytics](https://arxiv.org/pdf/1708.05027.pdf)是 SIGIR17 会议上的论文。
+这篇论文主要指出了已有 embedding-based 模型的一些已有的缺点：
+
+1. FM-based 的模型本质上是一个线性模型，其对现实数据的刻画能力有限。
+2. 已有的DNN模型（例如Wide & Deep, FNN, DeepCross等），**对获取到的 embedding-verctor 往往是通过连接（concatenate）或者平均（Average）处理。
+而这种做法往往对于这些 low-level 的特征没有起到任何的交叉作用。**这样就把学习高阶特征的任务完全落在了后面几层全连接层中。而事实证明，由于非常巨大的参数，
+使得 DNN 模型往往**很难训练**，因此也并没有很好的完成高阶特征交叉的任务。
+
+为了证明上述第二点提到关于已有 DNN 的模型，该论文作者尝试利用同样的参数、架构来训练 Wide&Depp(3个隐藏层) 和Deep-Cross模型(10个隐藏层的Residual-Network)。
+发现这Wide&Depp模型的 training-error 都很高，证明模型无法得到有效的训练。而利用了上面提到的 FNN 中利用 FM隐含向量来初始化网络后，模型的训练问题才得到了一定程度的改进。
+
+<figure>
+	<a href=""><img src="/assets/images/dnn_ctr/htr.png" alt="" width="600" heigh="500"></a>
+</figure>
+
+在这里，我们先直接来看看NFM网络的定义：
+
+$$
+\hat{y}_{NFM}(\mathbf{x}) = w_0 + \sum_{i=1}^{n}w_ix_i + f(\mathbf{x})
+$$
+
+其中$$f(\mathbf{x})$$正是网络中DNN的部分。
+
+### Bi-Interaction Pooling
+
+其实 NFM 提出的思想很简单，上面提到 **Concatenation** 的做法无法很好的归纳到有用的信息，这导致了后面隐含层的学习任务过重。
+那么NFM模型中就设计了一个专门的**Bi-interaction Pooling** 对底层的embedding-vector做二阶的归纳处理，提升了层级之间信息的传递，从而减轻了后面网络的学习压力。
+
+
+<figure>
+	<a href=""><img src="/assets/images/dnn_ctr/bi.png" alt="" width="500" heigh="500"></a>
+</figure>
+
+**Bi-Interaction Pooling**层的输入$$\mathbf{\mathcal{V}}_{x}$$是embedding-verctor的集合，该层的作用就是执行pooling操作将多个embedding-vectors变成一个vector：
+
+$$
+f_{BI}(\mathbf{\mathcal{V}}_x) = \sum_{i=1}^{n}\sum_{j=i+1}^{n}x_i\mathbf{v}_i  \odot x_j\mathbf{v}_j
+$$
+
+其中$$\odot$$表示两个向量之间的 element-wise 乘积。其实实际上并不需要像上式那样遍历所有$$n$$，每个field只有一个$$x$$有一个1.很明显，**BI层输出就是embedding-vector的二阶交叉向量。**
+我擅自做了一个图，觉得更形象的刻画了这个操作：
+
+<figure>
+	<a href=""><img src="/assets/images/dnn_ctr/bi2.png" alt="" width="180" heigh="300"></a>
+	<figcaption><a href="" title="">Bi-Interaction的交互过程</a>.</figcaption>
+</figure>
+
+看着上图，是不是隐隐有一种很熟悉的感觉，感觉这图跟FM中的二阶特征交叉过程很像？**是的，NFM模型证明，利用这个Bi-Interaction Pooling Layer，FM就相当于了没有隐含层的NFM模型。**
+
+
+$$
+\begin{equation}
+\begin{aligned}
+
+\hat{y}_{NFM-0} &= w_0 + \sum_{i=1}^{n}w_ix_i + \mathbf{h}^T\sum_{i=1}^{n}\sum_{j=i+1}^{n}x_i\mathbf{v_i} \odot x_j\mathbf{v_j} \\
+                &= w_0 + \sum_{i=1}^{n}w_ix_i + \sum_{i=1}^{n}\sum_{j=i+1}^{n}\sum_{f=1}^k h_fv_{if}v_{jf}.x_ix_j
+
+\end{aligned}
+\end{equation}
+$$
+
+其中在上式中，$$\mathbf{h}$$是一个全1的向量。这也一定程度证明了NFM over-power FM的原因。
+
+在论文中指出，上面的BI层还可以通过一定的公式变换，达到线性复杂度（公式中的记号$$\mathbf{v}^2$$表示向量的element-wise相乘）：
+
+$$
+f_{BI}(V_x) = \frac{1}{2}[(\sum_{i=1}^{n}x_i\mathbf{v}_i)^2 - \sum_{i=1}^{n}(x_i\mathbf{v_i}^2)]
+$$
+
+论文中还提出利用了很多深度学习的技巧用于训练和防止模型overfiting。例如BI层和隐含层后防止Dropout-Layer和BN层，利用AdaGrad-minbatch方式来训练网络等。
+
+最后，甩出NFM模型和LibFM、Wide&Depp、DeepCross模型的对比。具体的更多细节可以参考论文：
+<figure>
+	<a href=""><img src="/assets/images/dnn_ctr/result.png" alt="" width="800" heigh="800"></a>
+</figure>
+
+## 0x04. 结语
+
+本来还想介绍一下PNN(Product-based Neural Networks)，该网络的本质也是指出神经网络MLP中节点的 Add 操作可能不能有效的探索到不同类别特征的交互关系，虽然MLP理论上可以以任意精度逼近任意函数，但越泛化的表达，拟合到具体数据的特定模式越不容易。PNN主要是在深度学习网络中增加了一个inner/outer product layer，用来建模特征之间的关系。但是因为比较懒，所以具体就看下论文吧。
+
+总结而言，上面的这些神经网络改进的点，无非是针对如下的几个问题：
+
+1. 大规模稀疏问题下，DNN难以训练的问题。
+2. 增加DNN中对数据交互的刻画能力。
+
+## 0x05. 参考
+
+1. [1][Deep Learning over Multi-field Categorical Data](https://arxiv.org/pdf/1601.02376.pdf)
+2. [2][Neural Factorization Machines for Sparse Predictive Analytics](https://arxiv.org/pdf/1708.05027.pdf)
+3. [3][Product-based Neural Networks for User Response Prediction](https://arxiv.org/pdf/1611.00144.pdf)
+4. [4][主流CTR预估模型的演化及对比](https://zhuanlan.zhihu.com/p/35465875)
