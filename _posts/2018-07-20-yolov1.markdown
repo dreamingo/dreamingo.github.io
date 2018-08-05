@@ -1,0 +1,162 @@
+---
+layout: post
+title: "Object-Detection系列 - YOLO"
+modified:
+categories: 机器学习 
+description: "Object-Detection Deep-Learning YOLO"
+tags: [Object-Detection Deep-Learning YOLO]
+comments: true
+mathjax: true
+share:
+date: 2018-07-20T11:18:42+08:00
+---
+
+## 0x01. 前言
+> YOLO系列(You Only Look Once)的一作 Joseph Redmon 大神是华盛顿大学的博士，其中 YOLO v1 论文最早于2015年6月提交到 Arxiv，几经修改后最后一版于2016年5月提交。对于YOLO一系列（V2，V3），作者在其官网[http://pjreddie.com/yolo](https://www.zhihu.com/people/george-zhang-84/activities)展示了相关的展示视频和项目代码。有兴趣的同学可以多参考下。**该文章主要介绍[YOLO v1](https://arxiv.org/pdf/1506.02640.pdf)。**
+
+在开始介绍YOLO之前，就不得不先提下 R-CNN 系列的工作。RCNN 系列(fast/faster RCNN)这类基于 Region-proposal 方法，预测步骤主要分为几个部分：
+
+1. 先通过 **Region proposals** 方法（例如Selective-Search、faster-rccn中的RPN网络）对待检测图片**生成**若干可能存在物品的 bounding-boxes；
+2. 通过 CNN 网络对每个 bounding-box 进行**分类**(person/dog/cat/.../background)。
+3. 利用 bounding-box regression 方法对 bounding-box 的定位作进一步**微调和校准**。
+
+对比之下，YOLO的主要卖点在于：
+
+1. 仅利用一个**单一**的神经网络，直接通过 **regression** 的方式来预测 bounding-boxes 的位置和目标类别。实现**端到端一体化**的检测过程。
+2. 由于端到端系统的实现额外生成 region-proposal，YOLO的**检测速度非常快**，在Titan X的GPU上能够达到45帧每秒。
+3. RCNN系列中，每个 region-proposal 的分类过程值用到全图中局部的特征；而YOLO中则利用到**全图**的Context 信息，因此**背景的 False-positives（将背景认为是包含物品的前景） 大幅降低；**
+4. YOLO有一定的**泛化和迁移能力**。在自然图片训练出来的网络能够在艺术图片上达到同样的效果。
+
+<figure>
+	<a href=""><img src="/assets/images/yolo/art.png" alt="" width="700" heigh="300"></a>
+	<figcaption><a href="" title="">YOLO在艺术照上的泛化</a>.</figcaption>
+</figure>
+
+## 0x02. YOLO - Unified Dection
+
+### 算法流程：
+YOLO的工作过程大致分为以下几步：
+
+#### 1. 输入图片Resize
+由于 Dectection 工作往往需要更细粒度的视觉信息，因此网络将输入的图片从 $$224 \times 224$$ **Resize** 为 $$448 \times 448 $$
+
+#### 2. 图片分割
+将输入图片**分割**为 $$ S \times S $$ 个格子(grid)。在论文中，$$S$$的值为7。如果一个物体的 Grounp-truth-Box的中心点落入了这个格子(grid)，则算法认为**该格子(grid)负责检测出这个物体。**
+
+#### 3. Bounding-box的回归预测
+对于每个格子，算法认为其会负责生成 $$B$$ 个 bounding-box 以及其置信度得分(confidence-score)。在论文中，$$B = 2$$。结合上面的第2点，也就是一个图片中，最多会有 $$ 7 \times 7 \times 2 = 98$$ 个 bounding-box；
+
+<figure>
+	<a href=""><img src="/assets/images/yolo/box.png" alt="" width="200" heigh="200"></a>
+	<figcaption><a href="" title="">将图片切分为 $S \times S$个grid，每个grid负责生成两个 bounding-box </a>.</figcaption>
+</figure>
+
+上面提到 YOLO 是一个**回归**任务。对于上面生成的每个 bounding-box，算法会生成5个回归预测值$$[x, y, w, h, confidence\_score]$$，其中：
+* 置信度得分用于表示该 bounding-box 是否包含物体、以及这框是否框得足够的准确。因此，置信度得分为：$$confidence = Pr(Object) * IOU_{pred}^{truth}$$，其中如果该框不包含物体，则其置信度应该为0。
+* 坐标$$(x, y)$$ 表示了 bouding-box 中心点距离格子(grid)位置的偏移量（已经被归一化到[0,1]z之间），而$$(w, h)$$ 则表示 bounding-box 长宽(相对于图片大小，因此也是被normilized到[0,1]之间)(对于参数$$[x, y, w, h]$$ 更加具体的 normalized 方式，可以参考引用[3](https://zhuanlan.zhihu.com/p/31427164)中的文章。)；
+
+
+#### 4. 类别预测
+对于图片中的每个格子（**与每个格子(grid)包含几个box无关**），每个类别预测一个条件概率 $$Pr(Class_i \mid Object)$$，也就是说，如果共有20个类别，则每个 grid 会回归生成一个20维的概率向量。
+
+<figure>
+	<a href=""><img src="/assets/images/yolo/cls.png" alt="" width="200" heigh="200"></a>
+	<figcaption><a href="" title="">每个grid有一个对应的类别概率向量</a>.</figcaption>
+</figure>
+
+在实际预测的时候，每个 bounding-box 针对每个类别的预测置信概率值为：
+
+$$
+Pr(Class_i | Object) * Pr(Object) * IoU = Pr (Class_i) * IoU
+$$
+
+### 模型输出
+
+我们总结一下上面说的几个点。模型共划分成 $$ 7 \times 7 $$ 个格子，每个格子预测 $$2$$ 个 Bounding-box，对于每个bounding-box，需要预测4个坐标值和一个置信度得分。同时每个格子预测20个类别的概率向量。那么，对于一张图片，模型需要预测输出的张量大小为 $$7 \times 7 \times (2 * 5 + 20) = 7 \times 7 \times 30 $$。
+
+在这里，我利用下引用[[4](https://docs.google.com/presentation/d/1aeRvtKG21KHdD5lg6Hgyhx5rPq_ZOsGjG5rJ1HP7BbA/pub?start=false&loop=false&delayms=3000&slide=id.p)]中PPT的动态照片来分析这个模型输出的张量。 
+Anyway，**一定要点开这个引用文章来看看，动态的PPT生动的展示了YOLO的全过程！！**
+
+从下图我们可以看到，每个grid有一个30维的向量。其中前5维是 bbox1 的预测输出$$[x, y, w, h, confidence\_score]$$，接下来的5维是 bbox2 的输出。而最后长度为20的向量则是每个格子对每个类别的概率输出。我们利用每个 bounding-box 的置信得分乘以概率向量，则得到了每个 box 关于每个类别的概率置信得分(class-specific confidence score)。
+
+<figure>
+	<a href=""><img src="/assets/images/yolo/tensor.png" alt="" width="850" heigh="400"></a>
+	<figcaption><a href="" title="">输出张量中，其中一个格子向量结果的展示。</a>.</figcaption>
+</figure>
+
+### 输出处理
+
+YOLO的网络的最后一层输出即为这个$$7 \times 7 \times 30$$的tensor，要得到实际的预测框，还需要对输出作以下处理：
+
+#### Step 1: 
+根据上面第5点对输出$$7 \times 7 \times 30$$的向量进行处理（每个bounding-box的置信得分乘以概率向量），得到98个 bounding-box 的class-score：
+
+<figure>
+	<a href=""><img src="/assets/images/yolo/s1.png" alt="" width="300" heigh="300"></a>
+	<figcaption><a href="" title="">Class score for each box</a>.</figcaption>
+</figure>
+
+#### Step2: 
+阈值处理：将低于某个阈值的 class-score 置零；
+<figure>
+	<a href=""><img src="/assets/images/yolo/s2.png" alt="" width="400" heigh="400"></a>
+	<figcaption><a href="" title="">阈值处理</a>.</figcaption>
+</figure>
+
+#### Step3:
+
+将概率值进行排序后，执行非最大值抑制，NMS（Non-Maximum Supression）算法，减少重合度交到的 bounding-box；最后输出非零值的bounding-box及其置信度。(详细的动态过程可以参考引用[[4](https://docs.google.com/presentation/d/1aeRvtKG21KHdD5lg6Hgyhx5rPq_ZOsGjG5rJ1HP7BbA/pub?start=false&loop=false&delayms=3000&slide=id.p)])
+
+<figure>
+	<a href=""><img src="/assets/images/yolo/s3.png" alt="" width="400" heigh="400"></a>
+	<figcaption><a href="" title="">排序和NMS筛选过程</a>.</figcaption>
+</figure>
+
+## 0x03. 网络设计
+
+YOLO的网络设计跟传统的卷积神经网络相比没有提别出彩的地方。网络共有24个卷积层，2个全连接层。收到GoogleNet的影响，卷积网络中加入了大量 $$3 \times 3$$卷积层后接入$$1 \times 1$$的设计，意在对前面信息通道的整合以及压缩。（同时，作者还实现了一个 `fast-YOLO`，其中只有9层的卷积层，并且每层中也包含更少的卷积核。）
+
+<figure>
+	<a href=""><img src="/assets/images/yolo/network.png" alt="" width="800" heigh="300"></a>
+	<figcaption><a href="" title="">YOLO网络结构</a>.</figcaption>
+</figure>
+
+在这里指的一提的是网络训练过程中所用的**损失函数**。由于这是一个回归的任务，因此简单起见，YOLO中采取了 sum-squared-error 作为损失函数。但是这个损失函数中却包含了诸多的改进，我们先看看损失函数的模样(在这里我直接引用[[2](https://zhuanlan.zhihu.com/p/24916786?refer=xiaoleimlnote)]注释过的损失函数)：
+
+<figure>
+	<a href=""><img src="/assets/images/yolo/loss.png" alt="" width="700" heigh="700"></a>
+	<figcaption><a href="" title="">YOLO网络结构</a>.</figcaption>
+</figure>
+
+在上图中我们可以看到，整个 sum-squared-error 损失函数分成了4部分（图中不同颜色的4个框）。我们来逐一解释上图中一些改进的点：
+
+1. 从图中我们可以看到有**参数 $$\lambda_{coord}$$ 和 $$\lambda_{noobj}$$** 。之所以要区别对待是否包含物品的网格，是因为在每个图片中多有很多 grid-cells 不包含任何的物体，网络会尽其力令这些 grid-cell中的confidence score为0，但是由于不对称性（大部分的cell中不包含物体），这种行为会 overpower 那些有物体格子的梯度。导致模型不稳定而发散。因此在论文中指定 $$\lambda_{coord} = 5$$ 和 $$\lambda_{noobj} = 0.5$$
+
+2. 可以看到在坐标预测蓝色方框中，我们在对 bounding-box 的长宽 $$w, h$$做回归时，用的是**$$\sqrt{w}, \sqrt{h}$$的值做回归**。如果不这样处理，那么模型是公平的对待对待 large-bbox 和 small-bbox 同样的偏移量，这样是不合理的，因为 small-bbox 偏移一点，就会导致定位差距很大。因此这里取巧的利用开根号的形式，来缩小 large-bbox 和 small-bbox 大小上的差距，从而一定程度上缓解上面的问题。
+
+## 0x04 结果分析与总结
+
+在论文中，作者给出了YOLO与Fast RCNN检测结果对比，如下图。YOLO对背景的误判率(将背景当做有物品)(4.75%)比Fast RCNN的误判率(13.6%)低很多。但是YOLO的定位准确率较差，占总误差比例的19.0%，而fast rcnn仅为8.6%。这说明了YOLO中把检测转化为回归的思路有较好的precision，但是bounding box的定位方法还需要进一步改进。
+
+<figure>
+	<a href=""><img src="/assets/images/yolo/error.png" alt="" width="400" heigh="400"></a>
+</figure>
+
+### 缺点总结：
+
+1. 对小物品、或者靠的很近的物品检测效果不好。这是因为 **YOLO 对 bounding-box 的预测有很大的空间限制**。首先 YOLO 将图片切成 $$S \times S$$ 格，并且限定每个格子只有两个 bounding-box， 并且只属于一类物品。如果格子切割的太大，又或者格子内含有多个物品(相同/不同)，YOLO算法对以上的这种情况都不太友好。
+
+2. YOLO是从训练数据中学习如何预测 bounding-boxes 的。那么如果是新的物品或者物品的角度很少见，则YOLO很难把他检测出来；
+
+3. 由于损失函数的问题，定位误差是影响检测效果的主要原因，尤其是大小物体的处理上($$\sqrt w$$和$$\sqrt h $$的方法并没有完全解决这个问题)，还有待加强。
+
+<figure>
+	<a href=""><img src="/assets/images/yolo/big_pic.png" alt="" width="700" heigh="300"></a>
+</figure>
+
+## 0x05. 引用
+
+1. [You Only Look Once: Unified, Real-Time Object Detection](https://arxiv.org/pdf/1506.02640.pdf)
+2. [知乎专栏 - 晓雷：图解YOLO](https://zhuanlan.zhihu.com/p/24916786?refer=xiaoleimlnote)
+3. [知乎专栏 - 白裳丶 You Only Look Once: Unified, Real-Time Object Detection(YOLO)](https://zhuanlan.zhihu.com/p/31427164)
+4. [deepsystems.io - YOLO](https://docs.google.com/presentation/d/1aeRvtKG21KHdD5lg6Hgyhx5rPq_ZOsGjG5rJ1HP7BbA/pub?start=false&loop=false&delayms=3000&slide=id.p)

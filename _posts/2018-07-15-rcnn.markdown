@@ -1,0 +1,191 @@
+---
+layout: post
+title: "Object-Detection系列 - 基于CNN的目标检测开山之作：R-CNN"
+modified:
+categories: 机器学习 
+description: "Object-Detection Deep-Learning RCNN"
+tags: [Object-Detection Deep-Learning RCNN]
+comments: true
+mathjax: true
+share:
+date: 2018-07-15T11:18:42+08:00
+---
+
+## 0x01. 前言
+R-CNN([Rich feature hierachies for accurate object detection and semantic segmentation](https://arxiv.org/pdf/1311.2524.pdf))这个工作是 Ross Girshick(RBG大神)2014年的经典工作。说到 RBG 大神，就不得不提到其 [rbg's homepage](http://www.rossgirshick.info/)，大神在读博士期间就是为DPM获得过PASCAL VOC的终身成就奖，博士后期间更是不断发力，RCNN和Fast-RCNN就是其经典的作品。除外，大神不仅学术上造诣很高，同时工程能力极强，其 [Github respository](https://github.com/rbgirshick)中 RCNN 系列（RCNN、Fast/Faster RCNN）的代码也是 star 无数。
+
+<figure>
+	<a href=""><img src="/assets/images/rcnn/rbg.png" alt="" width="400" heigh="200"></a>
+	<figcaption><a href="" title="">RBG大神照</a>.</figcaption>
+</figure>
+
+RCNN可以看做是 Region-Proposal + CNN 框架的开山之作。尽管时隔2，3年再看这篇论文和结果，与目前最先进的方法相比，其有着大量的缺点（速度慢、精度一般等等）。但是也不影响其实一篇划时代的经典论文，与之前基于固定特征(HOG,SIFT等)方法相比，其大大的提升了目标检测效果。同时论文中提到的众多方法和技巧，也在后面的工作中有着大量的应用和改进。
+
+在开始之前，我们先来见到介绍下目标检测领域中**最常见的一些指标术语：**
+
+* **IoU(Intersection of Union)**
+物体检测需要定位出物体的 bounding-box，而对于 bounding-box 的定位精度，我们利用 IoU 来衡量。她定义了两个 bounding-box 的重叠度，衡量了预测框和实际框的重叠情况。
+
+<figure>
+	<a href=""><img src="/assets/images/rcnn/iou.png" alt="" width="400" heigh="200"></a>
+	<figcaption><a href="" title="">IoU示例图：$IoU = (A \cap B) / (A \cup B)$ </a></figcaption>
+</figure>
+
+* **mAP(mean Average Precision)**
+目标检测中衡量识别精度的指标是mAP（mean average precision）。多个类别物体检测中，每一个类别都可以根据recall和precision绘制一条曲线，AP就是该曲线下的面积，mAP是多个类别AP的平均值。进一步的讲解可以参考这篇[博客](http://blog.sina.com.cn/s/blog_9db078090102whzw.html)
+
+## 0x02. R-CNN中的目标检测
+
+R-CNN中的目标检测算法主要分为以下4个步骤：
+
+1. **候选区域的生成(Region proposals)**：利用 Selective Search 方法，为每张图片大概生成1K ~ 2K个候选区域；
+2. **抽取特征**：对于每个候选区域，Padding&Resize 后输入CNN网络中，提取出一个定长的实数特征向量；
+3. **分类**：对于每个候选框及其输入特征，利用 SVM 分类器作一个多分类问题(N+1，其中1为背景)，判别该候选框属于哪一类。
+4. **位置校准**：训练回归模型，对候选框的位置作进一步校准。
+
+<figure>
+	<a href=""><img src="/assets/images/rcnn/liucheng.png" alt="" width="700" heigh="200"></a>
+	<figcaption><a href="" title="">RCNN算法流程</a></figcaption>
+</figure>
+
+接下来我们每个步骤仔细的讨论
+- - -
+
+### 1. Region-Proposals 阶段：
+
+在这里，我们需要简单的了解，什么是 Selective-Search 算法（由于Seletive-Search是已有算法，不是本文的重要讨论对象，想要仔细了解可以参考博文[论文笔记：Selective Search for Object Recognition](http://jermmy.xyz/2017/05/04/2017-5-4-paper-notes-selective-search/)），该算法的主要目的，就是**从图片中找出可能存在物体的区域**。
+
+在进一步探讨它的原理之前，我们分析一下，如何判别哪些 region 属于一个物体？
+
+<figure>
+	<a href=""><img src="/assets/images/rcnn/ss.png" alt="" width="500" heigh="500"></a>
+</figure>
+
+作者在论文中引用了这个图片，分别描述了四种可能的情况：
+1. 图 a ，物体之间可能存在层级关系，比如：碗里有个勺；
+2. 图 b，我们可以用颜色来分开两只猫，却没法用纹理来区分；
+3. 图 c，我们可以用纹理来区分变色龙，却没法用颜色来区分；
+4. 图 d，轮胎是车的一部分，不是因为它们颜色相近、纹理相近，而是因为轮胎包含在车上。
+
+所以根据上面的提示，在 Selective-Search 中将图片初始化成很多小的区域$$R = r_1, r_2, ... r_n$$，衡量不同区域的相似度和特征，分别用到了：颜色/纹理/尺寸/填充相似度;
+
+算法贪心式地根据两两region的相似度进行合并，找出包围该区域的最小矩形框，得到新的region。具体的合并规则可以参考引用[[4](http://jermmy.xyz/2017/05/04/2017-5-4-paper-notes-selective-search/)]
+
+### 2. Feature Extraction 阶段
+在这一步中，作者利用CNN网络的`fc7`层，为每个 region-proposal 提取出定长的实数4096维特征。下图是作者在实验过程中，对 CNN网络 最后几层(`pool5, fc6, fc7`)以及是否微调(fine-tune)过的网络所提取出来特征对结果的影响：
+
+<figure>
+	<a href=""><img src="/assets/images/rcnn/result.png" alt="" width="800" heigh="300"></a>
+	<figcaption><a href="" title="">不同层提取出来的特征 & 是否fine-tune(FT)模型 对检测结果(AP)的影响</a></figcaption>
+</figure>
+
+#### 2.1 图像缩放
+值得注意的是，由于不同的 region-proposal 的大小不一样，而 CNN 网络要求模型的输入必须是固定大小$$ 224 \times 224 $$（卷积层不要求输入数据的大小，全连接层有要求）。因此，对输入图片的 Reshape 是不可避免的。论文中提到了几种 Reshape 的方式，并做了进一步的讨论：
+
+1. **各向同性缩放(isotropically-scale)：** 模型先利用一个最小的正方形(tightest-square)来包裹住 object-proposal，然后再执行各个方向等比例的缩放。而利用正方形来包裹的方式，又分为两种子方法：
+    * tightest-square with context: 这个最小正方形的扩展过程中，会包含原图方框外的其他信息。如果扩展过程中遇到了边界，则用 image-mean 的像素填充。如下图(A).
+    * tightest-square without context: 这个最小正方形的扩展过程中，利用 image-mean 的像素来填充，不包含额外信息。如下图(B).
+2. **各向异性缩放(anisotropically)：** 直接将图片缩放到固定的大小，不管图像是否扭曲。如下图(C)
+
+<figure>
+    <a href=""><img src="/assets/images/rcnn/scale.png" alt="" width="500" heigh="300"></a>
+    <figcaption><a href="" title="">不同的缩放手段</a></figcaption>
+</figure>
+
+#### 2.2 图像padding
+
+除了对输入的 region-proposal 进行缩放之外，论文还引入了 padding 的技术。在缩放之前，padding技术会尝试现将 bounding-box 往外补充（padding=16）。这种做法的含义就是对 Selective-Search所选择出来的方框再做进一步的补充，企图通过 padding 再偷窥多一点的信息。
+
+**最终，算法模型先对输入的region-proposal 进行padding=16的填充，然后再执行各向异性缩放。这样效果是最好的。**
+
+### 3.分类和非最大值抑制算法
+
+RCNN模型训练了$$N + 1$$个二分类的SVM分类器（其中$$N$$是待分类总数，1是背景）。因此，SVM分类器的参数矩阵的维度为$$4096 \times (N+1)$$。
+
+而且上一步中，每一张图片通过 region-proposal 和特征提取阶段后，得到了 $$ 2000 \times 4096$$ 大小的特征矩阵。在这里，我们可以直接通过大型矩阵乘法操作，得到2000个proposal属于每个类别的分类概率。
+
+其中值得注意的是，如果分类结束后我们就直接输出所有的非背景 bounding-boxes，这些 bbox 互相直接会有大量的同类别重叠（如下图）。我们需要对此执行 **NMS（Non-Maximum Suppression）非最大值抑制算法**，以此来筛除重复度较大的 bounding-box；
+
+<figure>
+    <a href=""><img src="/assets/images/rcnn/nms.png" alt="" width="500" heigh="300"></a>
+    <figcaption><a href="" title="">没有执行NMS时，大量的高度重叠的检测框</a></figcaption>
+</figure>
+
+其中，非最大值抑制算法的流程可以归纳如下：
+
+1. 针对某一类别，将该类别的 bounding-box 根据置信度得分/概率值进行排序;
+2. 选择置信度最高的 bounding-box 添加到最终输出列表中，将其从边界框列表中删除;
+3. 计算所有 bbox 的面积，并计算置信度最高的 bbox 与其它候选框的IoU;
+4. 删除IoU大于阈值(0.5)的边界框;
+5. 重复上述过程，直至边界框列表为空。
+
+### 4. Bounding-Box Regression
+Bounding-Box Regression 是一种利用回归的方式，对定位框做进一步校准和调整的方法，以此来提交定位的精度。**这项技术在后来的 Fast/Faster RCNN等算法中都得到了极大的应用**；因此，很有必要在这里对其做详细的介绍。
+
+1. **模型输入**：对于一个 bounding-box 训练样本$$i$$，其输入为预测的 bounding-box 中心坐标和长宽：$$[x, y, w, h]$$，以及 ground-truth box 的坐标 $$[x^*, y^*, w^*, h^*]$$
+2. **模型输出**：假设模型输出校准后的 bounding-box 坐标为 $$[x', y', w', h']$$；但是**值得注意的是，这并不是模型要学习的值；**
+2. **模型学习**：**模型需要回归的是预测框和ground-truth框的偏移向量。** 对于输入，我们分别计算 校准后bbox相对 输入 bbox 的偏移量 $$\{t'\}$$ 和 ground-truth相对输入 bbox 的偏移量 $$\{t^*\}$$。其中的计算公式为：
+
+$$
+t'_x = (x' - x)/w, \  t'_y = (y' - y)/h, \ t'_w = log(w'/w), \ t_h = log(h'/h) \\
+t^*_x = (x^* - x)/w, \  t^*_y = (y^* - y)/h, \ t^*_w = log(w^*/w), \ t_h = log(h^*/h) 
+$$
+
+回归的目标，就是让$$\{t'\}$$尽可能的接近$$\{t*\}$$。得到预测输出$$\{t'\}$$后，我们再反推出预测框的真实坐标。在RCNN中，该回归的损失函数用的是 sum-squared-error，
+而在Fast/Faster RCNN中，损失函数改为了 Smooth L1函数：
+
+$$
+Smooth_{L1}(x)=\begin{cases} 0.5x^2 |x| \leq 1 \\ |x|-0.5 otherwise\end{cases}
+$$
+
+则损失函数为：
+
+$$
+L(t', t^*) = \sum_{i \in \{x, y, w, h\}} smooth_{L1}(t_i^* - t'_i)
+$$
+
+选用 SmoothL1 损失函数的原因是，**相比于L2损失函数，L1对离群点或异常值不敏感，可控制梯度的量级使训练更易收敛。**
+
+<figure>
+	<a href=""><img src="/assets/images/rcnn/l1.png" alt="" width="300" heigh="300"></a>
+	<figcaption><a href="" title="">Smooth L1损失函数</a></figcaption>
+</figure>
+
+## 0x03. 模型架构及细节
+
+### CNN模型
+论文中分别试验了 AlexNet 和 VGG16 两个CNN模型，其中Alexnet精度为58.5%，VGG16精度为66%，然而VGG16的预测时间却差不多是前者的7倍。
+
+该CNN模型是先利用 ILSVRC2012 的图片分类数据集进行预训练（共1000种分类物体)。训练完成后，将模型最后的 1000-way 分类层替换成 (N+1)-way 的分类层，同时对该层参数进行随机初始化。随后，模型利用PASCAL VOC数据集对模型进行 fine-tune，其中 fine-tune 过程中的模型输入数据如下：
+
+1. 对PASCAL 为VOC中10000张训练照片，每张提取2000个region proposals；
+2. 其中如果该 region-proposal 和 任意一个 ground-truth box的 IoU值大于0.5，则认为其是该类别的正样本，否则为负样本(背景);
+3. 在每个SGD迭代过程中的batch-size为128，其中包含32个正例和96个反例（背景）region-proposal；
+
+### SVM模型 & Why
+
+对于SVM模型的训练，**输入数据中的正样本是 ground-truth box，而反例则为 IoU < 0.3 的 region-proposals**
+
+因此，到了这里，很多人会提出两个问题：
+1. 为什么SVM训练样本和CNN模型微调时不一样？
+2. 为什么不直接使用CNN模型的softmax-layer来进行分类，还要再训练一个SVM分类器？
+
+对于第一个问题，论文中给出的回答是，由于CNN网络的参数巨大，因此需要更多的训练样本来对其进行 fine-tune 才不会导致模型 overfitting。
+更多的训练样本意味着宽松的正负样本界定条件（IoU > 0.5 即为正样本，反之为负样本）。而SVM模型适合于小样本的训练，同时该分类模型对精度要求更高，所以对数据的定义会更加的严格。
+
+而对于第二个问题，由于 CNN 网络在这里的作用是用于提取通用的特征，也由于其宽松的数据正负样本定义，模型分类精度不够。而利用抽取得到的特征和更严格的样本定义SVM分类器，会令最终
+模型的分类特征达到最大值。（尽管上述结论是实验得出的，但是在Fast/Faster RCNN中去除了 SVM分类器，并指出并无太大影响，这难免就有点矛盾了。）
+
+## 0x04. 总结
+
+总的而言，由于CNN模型的引入（特征对数据的表达能力更强），使得RCNN模型与基于传统特征的方法相比，有了极大的提升。 但是，模型也有一些非常显著的**缺点**，这也是后续算法孜孜不倦的重点改进内容：
+
+1. 训练、预测过程多分为多个阶段，步骤繁琐并且引入一定的误差；
+2. 训练耗时，同时模型中间保存的特征结果占据极大的磁盘空间（5000张图片会产生200G的特征文件（5000 * 2000 * 4096 * 4））；
+3. 预测速度极慢，完全达不到工业的标准。VGG16模型利用GPU来预测一张照片需要47s。
+
+## 0x05. 引用
+
+1. [Rich feature hierarchies for accurate object detection and semantic segmentation](https://arxiv.org/pdf/1311.2524.pdf)
+3. [知乎专栏 - 晓雷机器学习笔记 RCNN- 将CNN引入目标检测的开山之作](https://zhuanlan.zhihu.com/p/23006190?refer=xiaoleimlnote)
+4. [论文笔记：Selective Search for Object Recognition](http://jermmy.xyz/2017/05/04/2017-5-4-paper-notes-selective-search/)
