@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "CTR之路-基础篇：Logistic Regression"
+title: "CTR之路-基础篇：LR详解 & 非线性 & 并行化"
 modified:
 categories: 机器学习 
 description: "CTR学习之路：Logistic Regression"

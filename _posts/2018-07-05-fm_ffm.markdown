@@ -171,7 +171,7 @@ $$
 
 Yu-Chin Juan实现了一个C++版的FFM模型([LibFFM](https://github.com/guestwalk/libffm))。在参考文章[『美团技术团队 - 深入FFM原理与实践』](https://tech.meituan.com/deep_understanding_of_ffm_principles_and_practices.html)中有对其进行详细的介绍。我一来没有认真阅读过源码，而来别人珠玉在前，我也不献丑了。总的而言，代码中通过运用了一些小的技巧：
 
-1. 由于FM/FFM的主要适用场景是稀疏数据，因此利用Addative自适应学习速率的算法AdaDelta（可以参考本博客前面的[文章]()）。一定程度上加速了训练的过程。
+1. 由于FM/FFM的主要适用场景是稀疏数据，因此利用Addative自适应学习速率的算法AdaDelta（可以参考本博客前面的[文章](http://dreamingo.github.io/2018/05/overview_gradient_descent/)）。一定程度上加速了训练的过程。
 2. 利用了OpenMP的多核并行计算框架，实现了SGD的异步无锁并行版本Hogwild!算法。充分的利用计算资源，大大加快了SGD的训练速度。
 3. 利用SIMD CPU指令来加速矩阵内积的运算。
 

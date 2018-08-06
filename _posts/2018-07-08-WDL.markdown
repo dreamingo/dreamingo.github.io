@@ -83,7 +83,7 @@ $$
 
 1. 在得到由连续变量和embedding向量连接起来的向量后，DNN将该向量作为输入到三个隐含层大小为1024，512，256带激活函数RELU的全连接层中。
 
-2. 由于要训练模型的embedding向量，输入数据稀疏为主，因此采取Addative学习方法，利用[AdaGrad]()来进行优化学习。
+2. 由于要训练模型的embedding向量，输入数据稀疏为主，因此采取Addative学习方法，利用[AdaGrad](http://dreamingo.github.io/2018/05/overview_gradient_descent/)来进行优化学习。
 
 ### 联合训练
 
