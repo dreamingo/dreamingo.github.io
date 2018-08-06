@@ -44,7 +44,9 @@ date: 2018-05-15T13:54:50+08:00
 实际上是对每个像素点，在**不同的channels上进行线性组合**（起到信息整合的作用）,并且保留原有feature-map的平面结构，调整了depth，起到了完成升维和
 降维的特点。在InceptionNet中，1x1的使用结构图如下：
 
-![img](https://pic4.zhimg.com/80/v2-0f4430c2c6b79df077ffbe6957f0a99f_hd.jpg)
+<figure>
+	<a href=""><img src="/assets/images/small_model1/11.png" alt="" width="400" heigh="400"></a>
+</figure>
 
 可以看到在下图，输入到3x3或者5x5卷积之前，都先通过一层1x1卷积来降低输入的维度，减少计算量；
 
@@ -96,7 +98,9 @@ SqueezeNet中提出了一个独特的卷积层模块-FireModule，该模块主�
 
 > SqueezeNet共8个Fire Module，2个CONV和4个POOL，没有BN，最终模型4.8M，在ImageNet上top-1 acc 57.5%, top-5 acc 80.3%，**性能是AlexNet水平**，经过DeepCompression进一步压缩后模型大小可以达到逆天的0.47M，但DeepCompression方法也是仅关心压缩不关心加速的。最后实验还测试了shotcut，证明类似ResNet那样最简单的shotcut最好，top-1和top-5分别提升2.9%和2.2%，性能提升明显且不会增加参数数量，几乎不会影响计算量，shotcut简直是a free lunch！ -- by [CVPR2018 高效小网络分析](https://zhuanlan.zhihu.com/p/37074222)
 
-![img](https://pic3.zhimg.com/80/v2-71c07aaf3ebc71011e9defb908574e77_hd.jpg)
+<figure>
+	<a href=""><img src="/assets/images/small_model1/12.png" alt="" width="500" heigh="300"></a>
+</figure>
 
 第一个CONV1x1将输入通道数压缩(squeeze)到1/8送给CONV3x3，上下两路CONV扩展(expand)四倍后联结，还原输入通道数量。block中CONV1x1和CONV3x3的参数数量之比是1:3，计算量之比也是1:3。
 
@@ -124,7 +128,9 @@ MobileNet是第一个面向移动端的小网络，其论文中也指出目前�
 
 **GCONV分组(Group)卷积层**，在该卷积层之前，可能会现有一个1x1的卷积层做输入的升降维。1x1卷积的输出按通道数划分为 g 组，每小组独立分别卷积，结果联结到一起作为输出，如图中上面部分，Output channels作为GCONV的输入，分了3组分别CONV3x3，组内有信息流通，但不同分组之间没有信息流通。
 
-![img](https://pic2.zhimg.com/80/v2-50e1dd66d896408716881659b10be119_hd.jpg)
+<figure>
+	<a href=""><img src="/assets/images/small_model1/13" alt="" width="350" heigh="500"></a>
+</figure>
 
 * **参数数量：**  $$(k_h \times k_w \times c_{in}/g \times c_{out}/g) \times g$$
 * **计算量（mAdds）：** $$(k_h \times k_w \times c_{in}/g \times c_{out}/g) \times g \times H \times W $$
