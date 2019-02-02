@@ -1,0 +1,431 @@
+---
+layout: post
+title: "fastText源码剖析（上）"
+modified:
+categories: 机器学习 
+description: "nlp fasttext source-code"
+tags: [nlp fasttext source-code]
+comments: true
+mathjax: true
+share:
+date: 2019-02-01T10:28:13+08:00
+---
+
+## 0x01. 前言
+[Fasttext](https://github.com/facebookresearch/fastText) 
+是2016年[Tomas Mikolov](https://research.fb.com/people/mikolov-tomas/) 大神跳槽到Facebook之后的又一力作。其理论基础是以下的两篇论文：
+
+1. [Bag of Tricks for Efficient Text Classification](https://arxiv.org/pdf/1607.01759.pdf)
+2. [Enriching Word Vectors with Subword Information](https://arxiv.org/pdf/1607.04606.pdf)
+
+<figure>
+	<a href=""><img src="/assets/images/fasttext/fasttext-time-benchmark.jpg" alt="" width="700" heigh="300"></a>
+    <figcaption><a href="" title="">fastText的一大优势：极其快，而且精度不输深度模型</a></figcaption>
+</figure>
+
+对于论文1，主要是在cbow 架构的基础上改进来做文本分类任务，利用输入token的向量之和来预测文本的分类。在这个基础上，为了解决传统 BOW 忽略语义顺序的缺陷，
+论文中采取加入了 word-ngram 的方式来缓解这个问题。也一定程度上提高了分类准确率。例如：
+
+> 对于输入文本"i want to buy an iphone on amazon", 除了空格分割的单词token作为输入之外，还会加入如"i want", "want to", "to buy", "an iphone"... 等word-ngram的作为输入补充。
+
+对于论文2，其提出来的motivation是 word2vec 训练得到的语义模型，没有考虑到单词的形体结构（morphology of words）,例如(`happy` vs `happines`, `movie` vs `movies`)，这些形态相近的单词各自有各自完全独立的语义向量。如果一个单词的某种形态比较少见，那么其训练得到的向量是不够准确的。因此，论文中提出在传统 cbow  和 skipgram 的基础上，在训练语料中添加上单词的 subwords 信息进行训练和预测。
+
+在训练阶段：
+
+> 在skipgram模型中，利用单词`happy`去预测上下文词语`birthday`时，除了会利用`<happy>`本身的向量，还会加入如`<ha`, `hap`, `app`, `ppy`, `py>`等subwords的向量。
+
+在预测阶段：
+
+> 单词`happy`的向量，等于`<happy>`及其subwords向量的均值。
+
+本质而言，fastText 是一个在word2vec基础上加入了一些trick来改进的分类/语义模型的工具。引入了C++11的语言特性，并且利用pybind11实现Python的接口。是一个 **更具可读性、模块化更清晰** 的word2vec 实现。
+
+因此，在阅读源码之前，强烈推荐先阅读[word2vec 中的数学原理详解](https://www.cnblogs.com/peghoty/p/3857839.html)一文，特别是对负采样、哈夫曼树有一个具象的了解。(虽然该文章排版上有些缺陷，但是的确是一片好文。)
+
+
+## 0x02. 基础概念
+
+### 1. 工具概况：
+
+根据github上指引编译好之后，直接使用命令`./fasttext`，即可以看到该工具支持的一些基本功能。可以看到，除了最常用的训练分类模型和语义模型（skipgram & cbow）之外，还有很多额外的小工具。
+
+<figure>
+	<a href=""><img src="/assets/images/fasttext/fasttext_func.jpg" alt="" width="600" heigh="300"></a>
+    <figcaption><a href="" title="">fastText提供的基础功能</a></figcaption>
+</figure>
+
+进入每个子功能之后，在不提供任何参数的情况下，还可以看到各个子功能所需的参数。在这里就不再详述了。
+
+我利用650w条query进行`Skipgram`模型的训练，其中单词数量约13w左右；
+在18款mbp机器上开12个线程进行5轮的训练，约4分钟即可完成。
+
+利用这650w条query进行二分类，则大约需要1分钟即可训练完成，而且在校验集上的准确率高达99.5%！！**速度果然快的飞起！！**(分类比语义模型之所以要快的多，主要是因为分类模型一行数据只需要update模型一次，而skipgram模型则会update模型多次。同时即使利用负采样或层次聚类的方法，二分类的输出层计算量还是远少于语义模型的输出层计算量)
+
+### 2. 源码基础架构
+
+<figure>
+	<a href=""><img src="/assets/images/fasttext/fasttext_structure.jpg" alt="" width="1200" heigh="500"></a>
+    <figcaption><a href="" title="">fastText代码结构</a></figcaption>
+</figure>
+
+**本文先介绍顶层的`fasttext`模块和词典管理`dict`模块**
+
+
+## 0x03. fastText模块
+
+在这里，我们以训练为例子，从上到下解析下函数的脉络调用路径。在开始之前，我们先来理顺下一些基本的模型和参数规模：
+
+<figure>
+	<a href=""><img src="/assets/images/fasttext/model.jpg" alt="" width="700" heigh="300"></a>
+    <figcaption><a href="" title="">fasttext中经典的两层网络结构</a></figcaption>
+</figure>
+
+训练的主入口就是 `fasttext.cc:train()` 函数了，可以看到，主入口主要做了两件执行：
+1. 过一遍整个训练文件，对词典进行初始化；
+2. 初始化`input`，`output`矩阵。
+3. 启动训练线程；
+
+{% highlight c++ %}
+void FastText::train(const Args& args) {
+  args_ = std::make_shared<Args>(args);
+  dict_ = std::make_shared<Dictionary>(args_);
+  // ....
+  std::ifstream ifs(args_->input);
+  // ...
+  // 训练初始阶段，dict_模块会全部先过一遍训练文件，用于初始化词典。
+  dict_->readFromFile(ifs);
+  ifs.close();
+
+  if (args_->pretrainedVectors.size() != 0) {
+    loadVectors(args_->pretrainedVectors);
+  } else {
+    // 输入矩阵 input 的大小等于 nwords + bucket，是因为ngram / subwords 都是
+    // 哈希到固定数量的bucket中的。
+    input_ =
+        std::make_shared<Matrix>(dict_->nwords() + args_->bucket, args_->dim);
+    // 矩阵初始化
+    input_->uniform(1.0 / args_->dim);
+  }
+
+  // 初始化输出矩阵
+  if (args_->model == model_name::sup) {
+    output_ = std::make_shared<Matrix>(dict_->nlabels(), args_->dim);
+  } else {
+    output_ = std::make_shared<Matrix>(dict_->nwords(), args_->dim);
+  }
+  output_->zero();
+  // 主入口，启动训练线程。
+  startThreads();
+  model_ = std::make_shared<Model>(input_, output_, args_, 0);
+  if (args_->model == model_name::sup) {
+    model_->setTargetCounts(dict_->getCounts(entry_type::label));
+  } else {
+    model_->setTargetCounts(dict_->getCounts(entry_type::word));
+  }
+}
+{% endhighlight %} 
+
+在上面`startThreads`函数中，主要就是负责spawn了训练线程`trainThread`。因此我们这里就直接来看`trainThread`的主要代码：
+{% highlight c++ %}
+void FastText::trainThread(int32_t threadId) {
+  // 根据线程数，将训练文件按照总字节数（utils::size）均分成多个部分
+  // 这么做的一个后果是，每一部分的第一个词有可能从中间被切断，
+  // 这样的"小噪音"对于整体的训练结果无影响
+  std::ifstream ifs(args_->input);
+  utils::seek(ifs, threadId * utils::size(ifs) / args_->thread);
+
+  Model model(input_, output_, args_, threadId);
+  if (args_->model == model_name::sup) {
+    model.setTargetCounts(dict_->getCounts(entry_type::label));
+  } else {
+    model.setTargetCounts(dict_->getCounts(entry_type::word));
+  }
+
+  const int64_t ntokens = dict_->ntokens();
+  int64_t localTokenCount = 0;
+  std::vector<int32_t> line, labels;
+  // ntokens 表示了整个训练文件所有的token数量（不去重），因此训练总量可以用
+  // epoch * ntokens 来表示。而tokenCount_则表示所有线程目前已经更新了的token数量
+  //tokenCount_ 是一个原子变量，所有线程共享
+  while (tokenCount_ < args_->epoch * ntokens) {
+    // 目前训练的进度(已处理的token数量 / ntokens * epoch)
+    real progress = real(tokenCount_) / (args_->epoch * ntokens);
+    // 学习速率随着训练的进度而衰减
+    real lr = args_->lr * (1.0 - progress);
+    // 根据功能，调用不同的函数。
+    if (args_->model == model_name::sup) {
+      localTokenCount += dict_->getLine(ifs, line, labels);
+      supervised(model, lr, line, labels);
+    } else if (args_->model == model_name::cbow) {
+      localTokenCount += dict_->getLine(ifs, line, model.rng);
+      cbow(model, lr, line);
+    } else if (args_->model == model_name::sg) {
+      localTokenCount += dict_->getLine(ifs, line, model.rng);
+      skipgram(model, lr, line);
+    }
+
+    // args->lrUpdateRate 这个参数控制了localTokenCount 什么时候加到 tokenCount_
+    // 中，算是一定程度上控制了lr的衰减频率。
+    if (localTokenCount > args_->lrUpdateRate) {
+      tokenCount_ += localTokenCount;
+      localTokenCount = 0;
+      if (threadId == 0 && args_->verbose > 1)
+        loss_ = model.getLoss();
+    }
+  }
+  if (threadId == 0)
+    loss_ = model.getLoss();
+  ifs.close();
+}
+{% endhighlight %} 
+
+在进入核心函数之前，可以看到上述的各个线程训练更新是相互独立的，一哄而上的，并没有对梯度、损失函数、模型参数进行加锁。这里其实就是之前文章([梯度下降优化方法进化史与并行概况](http://dreamingo.github.io/2018/05/overview_gradient_descent/))介绍过的`Hogwild!` 梯度下降并行算法。文章中提到过：
+
+> * SGD更新过程是随机抽取样本进行更新参数的。随机的情况下导致参数冲突的概率就会降低。特别是当数据稀疏的情况下更是如此。因此Hogwild!非常适用于稀疏问题的并行求解上。
+> * 即使是发生了冲突，也并非完全是按照坏的方向去发展。毕竟大家都还是朝着梯度下降的方向去走。可能只是有稍微的偏差。
+> * 民间中有一个既是笑话，也是真理的名言：SGD is so robust that an implementation bug is essentially a regularizer，每次冲突的发生导致微小的偏离，我们可以将其理解为一个正则项。
+慢慢的，我们就逐渐接触到核心功能的代码`supervised`, `cbow`, `skipgram`这三个函数了。我们在这里简单的来看看这几个函数。
+
+在这里，我们就直接来看`cbow`和`skipgram`这两种模型的接口代码：在下面的代码中，我们可以获取这些简要的信息：
+
+1. 上下文窗口并非固定的，而是从`[1, args->_ws]`这个区间进行采样的。
+2. skipgram 和 cbow 对于一行数据而言，计算量是很不一样的。(两者的具体不同，可以参考知乎上的这个解答：[cbow 与 skip-gram的比较](https://zhuanlan.zhihu.com/p/37477611))
+3. 输入除了单词本书，还加入了输入单词的subwords信息。
+4. 核心更新在函数`model.update`部分。
+
+{% highlight c++ %}
+
+// 分类入口
+void FastText::supervised(
+    Model& model,
+    real lr,
+    const std::vector<int32_t>& line,
+    const std::vector<int32_t>& labels) {
+  if (labels.size() == 0 || line.size() == 0) {
+    return;
+  }
+  // 如果是one-vs-all类型，则会根据label数量k，进行k次二分类训练。
+  if (args_->loss == loss_name::ova) {
+    model.update(line, labels, Model::kAllLabelsAsTarget, lr);
+  // 否则的话，就会很随便的只从labels中随机一个，当做一次Softmax更新一次就算了。
+  } else {
+    std::uniform_int_distribution<> uniform(0, labels.size() - 1);
+    int32_t i = uniform(model.rng);
+    model.update(line, labels, i, lr);
+  }
+}
+
+
+void FastText::cbow(Model& model, real lr, const std::vector<int32_t>& line) {
+  std::vector<int32_t> bow;
+  // 窗口大小是从[1, args->_ws]中随机的。并非固定的
+  std::uniform_int_distribution<> uniform(1, args_->ws);
+
+  // 每个单词会作为中心词，update整个模型一次。
+  for (int32_t w = 0; w < line.size(); w++) {
+    // cbow利用一个单词`w`的上下文`bow`来预测单词`w`。与word2vec相比，
+    // 这里除了上下文单词之外，还加入了这些上下文单词的subwords。
+    int32_t boundary = uniform(model.rng);
+    bow.clear();
+    for (int32_t c = -boundary; c <= boundary; c++) {
+      // 简单的边界限制
+      if (c != 0 && w + c >= 0 && w + c < line.size()) {
+        const std::vector<int32_t>& ngrams = dict_->getSubwords(line[w + c]);
+        bow.insert(bow.end(), ngrams.cbegin(), ngrams.cend());
+      }
+    }
+    model.update(bow, line, w, lr);
+  }
+}
+
+void FastText::skipgram(
+    Model& model,
+    real lr,
+    const std::vector<int32_t>& line) {
+  std::uniform_int_distribution<> uniform(1, args_->ws);
+  // Skipgram 利用单词w来预测其上文文单词。假设每次单词w的上下文单词有n个，
+  // 则一行下来模型会被更新 w * n 次，从此可见一个epoch下来skipgram的更新耗时比cbow更多。
+  for (int32_t w = 0; w < line.size(); w++) {
+    // 窗口的大小同样是随机产生的。
+    int32_t boundary = uniform(model.rng);
+    const std::vector<int32_t>& ngrams = dict_->getSubwords(line[w]);
+    for (int32_t c = -boundary; c <= boundary; c++) {
+      if (c != 0 && w + c >= 0 && w + c < line.size()) {
+        model.update(ngrams, line, w + c, lr);
+      }
+    }
+  }
+}
+{% endhighlight %} 
+
+fasttext表层的调用路径分析就先到这里，model中具体的更新细节留到下一篇再谈。
+
+## 0x04. Dict词典模块：
+
+在还没看fasttext源码之前，就在知乎中听到过很多关于 fastText 词典管理的trick，
+例如哈希化管理、ngram/subwords 存储的同样只是id ... 等。如今能够仔细阅读其中的源码，很多疑团逐渐一一解开。
+
+### 1. Dict中的读写模块：
+
+在dict模块中，主要有两个重要的读函数：
+* 程序开始时，调用`dictionary.cc::readFromFile()`函数来初始化整个词典；
+* 训练过程中，调用`dictionary.cc::getLine()`函数来获取每行中的信息。其中包括：
+    * `vector<int32_t> words`: 用于存储读取得到单词ID信息；
+    * `vector<int32_t> labels`: 用于存储读取得到的label-ID 信息；
+    * `vector<int32_t> word_hashes`: 用于存储 word-ngram 或者 subwords 的ID信息；
+
+在这里，我们对读取函数的源码作一个简要的领读和注释：
+
+{% highlight c++ %}
+// 在初始阶段，完整的读一遍input文件，初始化dict里面的token信息；
+// 在训练阶段，每个threads会负责读文件中的一块，只使用那一块内容进行训练。
+void Dictionary::readFromFile(std::istream& in) {
+  std::string word;
+  int64_t minThreshold = 1;
+  while (readWord(in, word)) {
+    // 将word添加到_words中，或者添加其count
+    add(word);
+    // 每读取100m个token，打印对应的信息
+    if (ntokens_ % 1000000 == 0 && args_->verbose > 1) {
+      std::cerr << "\rRead " << ntokens_ / 1000000 << "M words" << std::flush;
+    }
+    // 如果当前词表达到上线的0.75，则会开启整理功能
+    if (size_ > 0.75 * MAX_VOCAB_SIZE) {
+      minThreshold++;
+      // 过滤的上限会随着整理的次数增加而增加。
+      threshold(minThreshold, minThreshold);
+    }
+  }
+  // 根据定义的token&label最小频次，进行过滤和整理；
+  threshold(args_->minCount, args_->minCountLabel);
+  // 根据读取得token，计算每个token被丢弃得概率
+  initTableDiscard();
+  // 初始化每个token的ngram-subswords
+  initNgrams();
+  if (args_->verbose > 0) {
+    std::cerr << "\rRead " << ntokens_ / 1000000 << "M words" << std::endl;
+    std::cerr << "Number of words:  " << nwords_ << std::endl;
+    std::cerr << "Number of labels: " << nlabels_ << std::endl;
+  }
+  if (size_ == 0) {
+    throw std::invalid_argument(
+        "Empty vocabulary. Try a smaller -minCount value.");
+  }
+}
+{% endhighlight %}
+
+### 2. Token的ID和映射体系：
+
+在开始之前，我们先对`dict.cc`中几个**SIZE**做一下介绍：
+
+* `nwords_`：词典中单词的数量。(不包括ngram和substring)
+* `nlabels_`: label的数量，对于分类任务其数量等于分类的总数；对于语义模型而言，其值为0；
+* `size_`：实际上是数组`vector<entry>words_`的长度，实际上也等于`nwords_ + nlabels_`
+* `args->bucket`: ngram-words 和 subwords 存储空间大小。源码中默认值是200w（当然用户可以在参数中改正)。值得注意的是，这块空间的大小是**固定**的，ngram 和 subwords 的ID是计算完哈希再模除，因此**会有一定的碰撞概率**。因为在这里ngram和subwords都都只是辅助训练，因此小概率的碰撞是可以容忍的。
+
+
+在开始之前，我想先谈谈fastText中token的ID体系。**无论是words, labels, ngram-words, subwords，在fastText内部，传递、更新等等过程每个token是用ID来代替的**。
+
+其实上面提到，输入矩阵`input_`的大小为`nwords + bucket`，在这里直接先说结论：**在整个fastText 流转过程：**
+* **对于words，ngram-words，subwords，其ID就是在`input_`矩阵的下标。**
+* **对于labels，其ID就是在`output_`矩阵中的下标**
+
+但是，对于`words` & `labels`，其中又有一套自己的映射体系。接下来我们来看看这套映射关系和总的ID体系是怎么样关联起来的：
+
+<figure>
+	<a href=""><img src="/assets/images/fasttext/id.jpg" alt="" width="900" heigh="900"></a>
+    <figcaption><a href="" title="">Token的映射和ID体系</a></figcaption>
+</figure>
+
+在 fastText 中，使用的哈希函数叫做`FNV Hash`算法，该算法具有快速、冲突小，哈希结构高度分散的特点，适合于哈希一些
+非常相近的字符串，比如URL，hostname，文件名，text，IP地址等，FNV算法说明可参考[FNV Hash](http://www.isthe.com/chongo/tech/comp/fnv/)。
+
+{% highlight c++ %}
+uint32_t Dictionary::hash(const std::string& str) const {
+  uint32_t h = 2166136261;
+  for (size_t i = 0; i < str.size(); i++) {
+    // 这里是实现上的一个小bug，源码中也有指出，但是为了兼容以前的模型，保留这个bug
+    h = h ^ uint32_t(int8_t(str[i]));
+    h = h * 16777619;
+  }
+  return h;
+}
+{% endhighlight %}
+
+
+### 3. 训练过程中常见词的subsampling：
+
+Tomas Mikolove在引用[[1](https://arxiv.org/pdf/1310.4546.pdf)]的论文指出，在语料中出现的非常多的词语（如"in", "the"），训练过程会进行一定概率的subsample，这样做的好处是：
+
+1. 对于模型而言，学习到`france`, `pairs`之间的关系，比`france` 和 `the` 之间的关系更有利；一定概率的subsample能够对其他词语的向量学习更好。
+2. 这些常用词的vector很早就固定下来了，继续学习没有好处。一定概率的subsample能够加快训练速度。
+
+在fastText 中，词典在初始化构造完后，会初始化一个`pdiscard_`数组，这个数组记录了在训练过程中，每个词语被保留的概率：
+
+
+$$
+\begin{equation}
+pdiscard\_[i] = \sqrt{\frac{t}{\#(w_i) / ntokens}} + \frac{t}{(\#(w_i) / ntokens}
+\tag{1}\label{eq:1}
+\end{equation}
+$$
+
+可以看到，单词的频次$$\#(w_i)$$越高，被保留的概率就越低。
+
+
+### 4. 其他Trick：
+
+在计算单词 subwords 的时候，会有一些代码专门针对 UTF8 编码进行额外的处理：
+
+{% highlight c++ %}
+// 计算一个单词的subword。例如 captain, minn=2, maxn=3
+// <c, <ca, ca, cap, ap apt, pt, pta  ta tai ai ain in in> n>
+// substring中用于存储这些分割出来的字符串
+// ngrams 中则用来存储这些substring的ngram-id;
+void Dictionary::computeSubwords(
+    const std::string& word,
+    std::vector<int32_t>& ngrams,
+    std::vector<std::string>* substrings) const {
+  for (size_t i = 0; i < word.size(); i++) {
+    std::string ngram;
+    // NOTE: 0xC0 = 11000000, 0x80 = 10000000
+    // 先AND在判定是否等于，其实就是相当于判定 word[i] bits是否是以 10 开头
+    // 在UTF8编码中，10开头的byte(char)其实是一个多字节bytes的子序列。(也就是说是不完整的汉字)
+    // 在这里 word[i] & 0xC0, 为的就是要提取一个完整的utf8字体。
+    if ((word[i] & 0xC0) == 0x80) {
+      continue;
+    }
+    for (size_t j = i, n = 1; j < word.size() && n <= args_->maxn; n++) {
+      ngram.push_back(word[j++]);
+      // 提取一个完整的utf8字体
+      while (j < word.size() && (word[j] & 0xC0) == 0x80) {
+        ngram.push_back(word[j++]);
+      }
+      if (n >= args_->minn && !(n == 1 && (i == 0 || j == word.size()))) {
+        int32_t h = hash(ngram) % args_->bucket;
+        pushHash(ngrams, h);
+        if (substrings) {
+          substrings->push_back(ngram);
+        }
+      }
+    }
+  }
+}
+{% endhighlight %} 
+
+在读取完所有的word & labels 时，会对`words_`数组中的数据根据pair `<type, count>` 进行排序。根据pair进行排序的原因
+是因为要使得 words 和 labels 有效的分离。而根据 count 再进一步排序，则**有助于在后面构建哈夫曼编码树的使用。**
+
+<figure>
+	<a href=""><img src="/assets/images/fasttext/sort.jpg" alt="" width="700" heigh="500"></a>
+    <figcaption><a href="" title="">排序后的word_数组</a></figcaption>
+</figure>
+
+下一篇，我们主要对fastText的核心模块 model 作进一步分析。
+
+## 0x05. 引用
+1. [1].[Distributed Representations of Words and Phrases and their Compositionality](https://arxiv.org/pdf/1310.4546.pdf)
+2. [2].[Bag of Tricks for Efficient Text Classification](https://arxiv.org/pdf/1607.01759.pdf)
+3. [3].[Enriching Word Vectors with Subword Information](https://arxiv.org/pdf/1607.04606.pdf)
+4. [4].[fastText 源码分析](https://heleifz.github.io/14732610572844.html)
+5. [5].[word2vec 中的数学原理详解](https://www.cnblogs.com/peghoty/p/3857839.html)
