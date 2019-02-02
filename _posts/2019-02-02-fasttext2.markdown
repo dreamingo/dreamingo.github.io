@@ -1,0 +1,302 @@
+---
+layout: post
+title: "fastText源码剖析（下）"
+modified:
+categories: 机器学习 
+description: "nlp fasttext source-code"
+tags: [nlp fasttext source-code]
+comments: true
+mathjax: true
+share:
+date: 2019-02-02T14:10:42+08:00
+---
+
+## 0x01. 前言
+
+在我还没有仔细阅读fastText源码的时候，我有许多关于其中的一些疑问：
+
+* 代码中forward 和 backward 过程具体是如何实现的？
+* 哈夫曼编码树具体是如何构造的？
+* `negative sampling`, `hierachical softmax` 具体在代码中是如何实现的呢？
+* `negative sampling`, `hierachical softmax` 能够有效的减少复杂度，具体能减少多少呢？
+* fastText的快，具体有哪些优化细节呢？
+
+接下来的这片文章，会一边对model模块的源码进行分析，同时会逐渐解答上述的问题。
+
+
+## 0x02. Forward & Backward
+
+### 1. Train阶段
+
+在上一篇[文章](http://dreamingo.github.io/2019/02/fasttext/)中我们提到，在训练过程中，无论是文本训练，还是skipgram or cbow 模型，最终都是调用了`model.cc::update`函数。所以，我们这里先对这个函数进行解读。
+
+{% highlight c++ %}
+// 根据输入和目标，计算loss并更新模型
+// input: 输入token的ID。
+// targets: 输出的targets，
+//      * 在ovs多分类任务，则每个target都需要学习一遍：
+//      * 在其他分类任务，targets则是读入了labels，targetIndex表示此次要更新的target-index
+//      * 对于语义模型，targets则是line-words，targetIdx则表示本次要预测的单词index
+// lr: 当前学习速率
+void Model::update(
+    const std::vector<int32_t>& input,
+    const std::vector<int32_t>& targets,
+    int32_t targetIndex,
+    real lr) {
+  if (input.size() == 0) {
+    return;
+  }
+  // hidden层的向量值等于输入向量的平均和
+  computeHidden(input, hidden_);
+
+  // computeLoss 函数负责计算梯度、更新参数，计算loss
+  if (targetIndex == kAllLabelsAsTarget) {
+    loss_ += computeLoss(targets, -1, lr);
+  } else {
+    assert(targetIndex >= 0);
+    assert(targetIndex < osz_);
+    loss_ += computeLoss(targets, targetIndex, lr);
+  }
+
+  nexamples_ += 1;
+
+  // 对于分类模型，hidden是输入向量的均值。这里把梯度也平均更新回去
+  if (args_->model == model_name::sup) {
+    grad_.mul(1.0 / input.size());
+  }
+  // 反向更新输入矩阵 wi_
+  for (auto it = input.cbegin(); it != input.cend(); ++it) {
+    wi_->addRow(grad_, *it, 1.0);
+  }
+}
+
+{% endhighlight %} 
+
+
+可以看到，在上面的函数中，主要分为三个部分：
+
+1. 隐含层 `hidden` 的计算；
+2. `computeLoss`函数除了负责返回本次更新的loss，还负责计算`hidden`向量的梯度、更新输出矩阵`w_o`
+3. 利用计算得到的梯度，反向更新输入矩阵`wi_`_
+
+`computeHidden`函数本质上就是将输入token的向量求和平均得到的，这里就不再做分析了。这里我们来看看`computeLoss`函数：
+
+{% highlight c++ %}
+real Model::computeLoss(
+    const std::vector<int32_t>& targets,
+    int32_t targetIndex,
+    real lr) {
+  real loss = 0.0;
+
+  if (args_->loss == loss_name::ns) {
+    loss = negativeSampling(targets[targetIndex], lr);
+  } else if (args_->loss == loss_name::hs) {
+    loss = hierarchicalSoftmax(targets[targetIndex], lr);
+  } else if (args_->loss == loss_name::softmax) {
+    loss = softmax(targets[targetIndex], lr);
+  } else if (args_->loss == loss_name::ova) {
+    loss = oneVsAll(targets, lr);
+  } else {
+    throw std::invalid_argument("Unhandled loss function for this model.");
+  }
+
+  return loss;
+}
+
+{% endhighlight %} 
+
+
+可以看到，模型更新的过程，本质上取决于各种损失函数的不同而有不同的实现。因此，接下来我们分析一下各种损失函数的具体实现。
+
+## 0x03. 各类损失函数
+
+### 1. Softmax
+关于Softmax函数的数学背景，这里就不再详述了。具体参考之前的文章 [CTR之路-基础篇：LR详解 & 非线性 & 并行化](http://dreamingo.github.io/2018/06/ctr-lr/)，这里就直接说说结论。对于交叉熵损失函数，其化简后的梯度形式**非常的简单和优雅：**
+
+$$
+\begin{equation}
+\frac{\partial{l}}{\partial{\mathbf{w_i}}} = (y - p(x; w, b))x
+\tag{1}\label{eq:1}
+\end{equation}
+$$
+
+上式的符号，我在这里做一下到fastText中简单的映射：
+
+* $$w_i$$ 实际上对应的是fastText 中输出矩阵 $$wo_i$$，表示第 i 个label的输出向量。
+* $$x$$ 其实表示了训练样本的 hidden 层向量。
+
+由于$$w$$ 和 $$x$$ 参数在公式中的对称性，因此我们可以很简单的同理得到 $$x$$ 的求导:
+
+$$
+\begin{equation}
+\frac{\partial{l}}{\partial{\mathbf{x}}} = \sum_i^{n}(y - p(x; w, b))w_i
+\tag{2}\label{eq:2}
+\end{equation}
+$$
+
+其中，$$n$$表示了输出层向量的大小。因此，我们在 fastText 中可以看到下面的这段代码：
+
+{% highlight c++ %}
+real Model::softmax(int32_t target, real lr) {
+  grad_.zero();
+  computeOutputSoftmax();
+  for (int32_t i = 0; i < osz_; i++) {
+    real label = (i == target) ? 1.0 : 0.0;
+    real alpha = lr * (label - output_[i]);
+    // 这里的计算的梯度，是hidden-layer x的梯度
+    // Softmax 的交叉熵损失函数求导后，hidden的导数就是(label-p(hidden))w_oi
+    grad_.addRow(*wo_, i, alpha);
+    // Softmax 的交叉熵损失函数求导后，w的导数就是(label-p(hidden))hidden
+    wo_->addRow(hidden_, i, alpha);
+  }
+  // 交叉熵损失函数，在公式来看，是一个连乘，但是实际上其他项都是为1
+  return -log(output_[target]);
+}
+{% endhighlight %} 
+
+在这里，我们简要的分析下一个 softmax 函数的计算量：
+
+1. 在计算`computeOutputSoftmax`函数中，要计算 $$hidden \in R^{1 \times dim} \times wo_ \in R${dim \times nlabels}$$ 一个矩阵的乘法。
+2. 在计算 `computeOutputSoftmax`函数中， softmax 函数还要对所有output进行求和并归一化。
+3. 进行 `nlabels` 次梯度计算和矩阵更新。
+
+因此，总的计算量等于 $$dim \times nlabels  + 2 \times nlabels + 2 \times nlabels \times dim $$。
+刨除 dim 纬度的影响，计算量大概在 $$O(nlabels)$$的水平。
+在nlabel上 很大（多分类 or 语义模型， 常常有上百万纬），计算量是很大的。
+
+### 2. Negative Sampling
+
+废话不多说，我们直接来看负采样的代码吧：
+
+{% highlight c++ %}
+// 负采样，就是采样`neg`个负样本！！将Softmax过程变成了 `neg` + 1 次二分类。
+// 在这过程中更新模型！！
+real Model::negativeSampling(int32_t target, real lr) {
+  real loss = 0.0;
+  grad_.zero();
+  for (int32_t n = 0; n <= args_->neg; n++) {
+    if (n == 0) {
+      loss += binaryLogistic(target, true, lr);
+    } else {
+      loss += binaryLogistic(getNegative(target), false, lr);
+    }
+  }
+  return loss;
+}
+{% endhighlight %} 
+
+在这里，我们也分析一下 Negative Sampling 的计算量：
+
+1. 进行了 `neg` 次的二分类更新；
+2. 每次二分类更新，涉及的计算量为 $$dim$$ (就是两个大小为 dim 的向量相乘)
+
+计算量只有 $$neg \times dim$$_，刨除了dim纬度，则复杂度约为$$O(neg)$$, 复杂度远远少于 Softmax 计算。
+
+分析完复杂度之后，我们简要的看看 fastText 中是如何进行负采样的。
+
+{% highlight c++ %}
+// 根据output（分类任务是label，语义模型是word）的count，初始化每个结果被负采样
+// 的概率。token出现越多，被负采样的概率就会越高
+void Model::initTableNegatives(const std::vector<int64_t>& counts) {
+  real z = 0.0;
+  for (size_t i = 0; i < counts.size(); i++) {
+    z += pow(counts[i], 0.5);
+  }
+  for (size_t i = 0; i < counts.size(); i++) {
+    real c = pow(counts[i], 0.5);
+    for (size_t j = 0; j < c * NEGATIVE_TABLE_SIZE / z; j++) {
+      negatives_.push_back(i);
+    }
+  }
+  std::shuffle(negatives_.begin(), negatives_.end(), rng);
+}
+
+// 负采样
+int32_t Model::getNegative(int32_t target) {
+  int32_t negative;
+  do {
+    negative = negatives_[negpos];
+    negpos = (negpos + 1) % negatives_.size();
+  } while (target == negative);
+  // 如果负采样到自己，则跳过
+  return negative;
+}
+{% endhighlight %} 
+
+### 3. Hierachical Softmax
+
+关于层次Softmax 和 哈夫曼编码树的一些介绍，这里就不再详述了，具体可以参考 [word2vec 中的数学原理详解](https://www.cnblogs.com/peghoty/p/3857839.html)一文。
+
+在这里，我讲解几个问题：
+* 层次Softmax 是如何运转的，计算复杂度式多少？
+* 哈夫曼树是如何构建的？
+
+#### 3.1 Hierachical Softmax 复杂度分析：
+
+Hierachical Softmax(下面利用hs缩写代替)，本质上也是利用多次的二分类来代替一个全局的Softmax计算，以减少计算复杂度的。
+
+在构建的哈夫曼编码树中，一共有 $$nlabels - 1$$ 个中间节点，每个节点 $$i$$ 有一个 $$w_i \in R^{1 \times dim}$$ 的参数向量。因此，hs 的参数数量和 Softmax 其实是基本一致的。 规模是 $$w_o \in R^{dim \times (nlabels-1)} $$
+
+对于叶子节点 $$i$$, 都会有一条从根节点到该叶子节点的路径 $$path_i$$ 和 对应的哈夫曼编码 $$ code_i $$。假设路径长度为 $$N$$，那么这N次的二分类的labels，就对应哈夫曼编码 $$code_i$$;
+
+计算复杂度和 Softmax 相比，从原来的 $$O(nlabels)$$ 下降到 $$O(log(nlabels))$$ （平均叶子深度）的水平。
+
+{% highlight c++ %}
+// 层次softmax，其实就是获取target在哈夫曼编码树的路径（路径上对应的哈夫曼编码就是label）
+// 然后进行 #path 次 binaryLogistic，避免了Softmax过程中计算所有结果和归一化的耗费。
+real Model::hierarchicalSoftmax(int32_t target, real lr) {
+  real loss = 0.0;
+  grad_.zero();
+  const std::vector<bool>& binaryCode = codes[target];
+  const std::vector<int32_t>& pathToRoot = paths[target];
+  for (int32_t i = 0; i < pathToRoot.size(); i++) {
+    // binaryLogistic(int32_t target, bool label, real lr) {
+    // 这里的target_id 和 label_id 表示在 wo_ 矩阵的下标
+    loss += binaryLogistic(pathToRoot[i], binaryCode[i], lr);
+  }
+  return loss;
+}
+{% endhighlight %} 
+
+#### 3.2 哈夫曼编码树是如何构建的
+
+这个参考引用[[4](https://heleifz.github.io/14732610572844.html)]即可，别人珠玉在前，我就不献丑了。值得注意的是，前一篇文章中也有提到：
+
+>  在读取完所有的word & labels 时，会对`words_`数组中的数据根据pair `<type, count>` 进行排序。根据pair进行排序的原因
+是因为要使得 words 和 labels 有效的分离。而根据 count 再进一步排序，则**有助于在后面构建哈夫曼编码树的使用。**
+
+
+## 0x04. 其他Trick：
+
+#### Sigmoid 函数和 Log 函数的近似计算：
+
+我们知道，`Sigmoid` 函数在$$x=0$$左右会发生剧烈的变化，但是越往两边走，其函数值变化也就越小了。
+fastText 函数对$$ x \in [-8, 8]$$ 的区间进行大量切分，事先先计算好所有区间的 sigmoid 函数的数值。
+当 
+* $$x$$ < -8, 直接返回0
+* $$x$$ > 8, 直接返回1
+* $$x$$ 落入这个区间，则直接采取查表的方式获得具体的函数值。避免直接计算。
+
+{% highlight c++ %}
+real Model::sigmoid(real x) const {
+  if (x < -MAX_SIGMOID) {
+    return 0.0;
+  } else if (x > MAX_SIGMOID) {
+    return 1.0;
+  } else {
+    int64_t i =
+        int64_t((x + MAX_SIGMOID) * SIGMOID_TABLE_SIZE / MAX_SIGMOID / 2);
+    return t_sigmoid_[i];
+  }
+}
+{% endhighlight %} 
+
+同理于 log 函数。
+
+
+## 0x05. 引用
+1. [1].[Distributed Representations of Words and Phrases and their Compositionality](https://arxiv.org/pdf/1310.4546.pdf)
+2. [2].[Bag of Tricks for Efficient Text Classification](https://arxiv.org/pdf/1607.01759.pdf)
+3. [3].[Enriching Word Vectors with Subword Information](https://arxiv.org/pdf/1607.04606.pdf)
+4. [4].[fastText 源码分析](https://heleifz.github.io/14732610572844.html)
+5. [5].[word2vec 中的数学原理详解](https://www.cnblogs.com/peghoty/p/3857839.html)
