@@ -1,0 +1,184 @@
+---
+layout: post
+title: "RNN系列：RNN基础篇&源码剖析"
+modified:
+categories: 机器学习 
+description: "deep-learning rnn source-code"
+tags: [deep-learning rnn source-code]
+comments: true
+mathjax: true
+share:
+date: 2019-02-18T22:13:12+08:00
+---
+
+> 本文是 RNN 系列的第一篇文章，旨在从一些基本理论，实现源码上对 RNN 进行剖析。
+
+## 0x01. RNN基础理论
+
+`RNN (Recurrent Neural Networks)` 的诞生主要是为了处理序列问题与数据。 
+传统的神经网络（CNN/DNN）每次处理的数据都是相互直接独立的（例如每次处理一张照片、一个用户的特征等）。
+对于有时间或者前后顺序关联关系的数据，则显得无能为力了。因此， RNN 网络的的诞生就是为了处理问题，
+通过**网络内部信息的循环**，使信息得以持续保存。
+
+
+<figure>
+	<a href=""><img src="/assets/images/rnn/rnn.jpg" alt="" width="700" heigh="300"></a>
+    <figcaption><a href="" title="">RNN基础结构图, 出自[colah's blogs](http://colah.github.io/posts/2015-08-Understanding-LSTMs/)</a></figcaption>
+</figure>
+
+在上图中RNN中通过引入隐状态h(hidden-state)的概念，将h作为本次输入数据的特征提取数据，接着在转换为下一次模型的输入。从而达到记录前面状态的作用。
+
+网络上很多图中都直接将 RNN Cell 封装成一个黑盒子。其实我初学的时候，也难免会有很多的疑问，例如
+1. 隐含层数据$$h$$是如何和输入层数据$$x$$整合起来的？
+2. RNN Cell 中有什么参数
+3. 一个具体的例子？
+
+### 1.1 RNN内部小窥：
+在这里，我直接引用台大李宏毅教授的PPT中的图片：下图中可以看到。Cell 中是有两个矩阵参数 $$W_h$$ 和 $$W_i$$，分别对隐含层 $$h$$ 和 输入$$x$$ 做线性变换。 变换后参数的维度对齐之后，再相加起来。形成下一时间序列的隐含层输入 $$h'$$;
+
+同时也可以看到，隐含层的输出$$h'$$，往往需要再连接一个全连接层 + Softmax 层，才能够得到模型最终的输出 $$y$$.
+
+<figure>
+	<a href=""><img src="/assets/images/rnn/rnn2.jpg" alt="" width="500" heigh="500"></a>
+    <figcaption><a href="" title="">RNN内部结构图</a></figcaption>
+</figure>
+
+在这里，我们对 RNNCell 中的参数作进一步的分析：
+
+1. **输入 $$X_t$$:**  $$t$$表示在时刻 (time\_step)t 时模型的输入，一般的模型训练都是批量(batch)输入；此外，在NLP任务中， X 一般是输入数据的embedding表示向量。此处定义：batchsize = 32, input_size = 100; 因此输入矩阵 $$X_t \in R^{32 \times 100}$$
+2. **隐含向量 $$h_{t-1}$$：**  隐含向量的大小我们一般定义为 hidden_size, 在代码中也称作为 num_units, 此处我们定义 hidden_size = 128, 结合上面的batchsize，隐含层 $$h_{t-1} \in R^{32 \times 128}$$
+3. **Cell参数：** 根据矩阵乘法Shape对齐规则，我们能够轻易的推断出参数 $$W_i$$ 和 $$W_h$$ 的大小。其中：
+$$W_i \in R^{128 \times 100}$$, 而 $$W_h \in R^{128 \times 128}$$
+4. **输出 $$y$$ :** 假设输出的y值是预测词表中单词的概率，则假设词表有5w，则输出的$$Y \in R^{32 \times 50000}$$
+
+**在实际的源码实现中（下面会讲到），其实并不会出现 $$W_i$$, $$W_h$$这些矩阵。他们会被合并成一个统一的大矩阵 $$kernel \in R^{128 \times (100+128)}$$。而输入X和隐含层数据h则是通过 concate 的方式作为模型的数据，$$concat(X, h) \in R^{32 \times (100 + 128)}$$**。通过此等合并的方式，将本来需要两次的矩阵乘法运算变成一次，有效的加快运算速度。同时，在有些教程上，RNN的内部结构也是如此呈现的：
+
+<figure>
+	<a href=""><img src="/assets/images/rnn/rnn3.jpg" alt="" width="600" heigh="600"></a>
+    <figcaption><a href="" title="">更准确的RNN内部图</a></figcaption>
+</figure>
+
+### 1.2 RNN的各种形态
+
+在引用 [1][知乎专栏：TensorFlow中RNN实现的正确打开方式](https://zhuanlan.zhihu.com/p/28196873) 中，作者举出了集中不同的RNN形态，我这里稍作总结，详细可以参考引用文章。
+
+<figure>
+	<a href=""><img src="/assets/images/rnn/rnn4.jpg" alt="" width="800" heigh="500"></a>
+</figure>
+
+各种形态的用途：
+1. **N vs 1**: 例如可以处理传统的序列分类、序列回归等问题；
+2. **1 vs N**: 常用的从图片生成文字、从类别生成音乐等；
+3. **N vs M**: RNN 的最重要变种，也称为 seq2seq 模型。常用于处理机器翻译、序列生成等问题。
+
+
+### 1.3 具体例子：
+
+这里直接引用[知乎：LSTM网络的输入输入究竟是如何的？- Scofield的回答](https://www.zhihu.com/question/41949741/answer/318771336)中的一个例子：
+在开始之前，我们先简单的定义下几个输入符号：
+
+* $$x_t$$：$$t$$ 时刻的 RNN 网络输入序列。在这里例子中，**输入的一个单词的 embedding 向量。**
+* $$h_t$$:  $$t$$ 时刻的 RNN 网络隐状态；
+* $$o_t$$: $$t$$ 时刻的 RNN 网络的输出。
+* `time_step`: 表示序列本身的长度，如在`Char RNN`中，长度为10的句子对应的 `time_steps` 就等于10
+
+1. **原始文章（Raw Text）**
+```
+接触LSTM模型不久，简单看了一些相关的论文，还没有动手实现过。然而至今仍然想不通LSTM神经网络究竟是怎么工作的。……
+```
+
+2. **Tokenized （中文分词）**
+```
+sentence1: 接触 LSTM 模型 不久 ，简单 看了 一些 相关的 论文 ， 还 没有 动手 实现过 。
+sentence2: 然而 至今 仍然 想不通 LSTM 神经网络 究竟是 怎么 工作的。
+……
+```
+
+3. **dictionarized （词袋化）**
+```
+sentence1: 1 34 21 98 10 23 9 23 
+sentence2: 17 12 21 12 8 10 13 79 31 44 9 23 
+……
+```
+
+4. **padding every sentence to fixed length:**
+```
+sentence1: 1 34 21 98 10 23 9 23 0 0 0 0 0
+sentence2: 17 12 21 12 8 10 13 79 31 44 9 23 0
+……
+```
+
+5. **通过 look-up table 查找每个单词的 embeddings**，将每个句子转化为固定大小的矩阵。其中每一列表示一个 token 的词向量，列数表示 `time_step` 的长度（padded 之后的句子长度）。
+
+1. **Feed into RNNs as input:** 假设一个RNN的 `time_step` 长度为 $$l$$, 则 padded sentence length 矩阵的列数为 $$l$$, 一次 RNN 的run 只处理一条 sentence。其中，**每个sentence中的每个token的embedding 对应了 RNN 模型的每个时序$$t$$的输入$$X_t$$**，一次 RNNs 的run，连续的将整个句子处理完毕。
+2. **Get output :**  每个 `time_step`  $$t$$ 都是可以输出当前时序的隐含状态 $$h_t$$，但是整体RNN的输出 $$O_t$$ 是在最有一个 time_step $$l$$ 时候才获取的，才是完整的最终结果。
+
+4. **further processing with the output:** 我们可以将 output 根据分类任务或回归拟合任务的不同，分别进一步处理。比如，传给 `cross_entropy&softmax` 进行分类……或者获取每个`time_step` 对应的隐状态 $$h_{i}^{t}$$ ，做 `seq2seq` 网络……或者搞创新……
+
+
+
+## 0x02. 源码剖析：
+
+> 本文所引用的源码为 tensorflow-1.2 版本的代码。代码路径为：`tensorflow/tensorflow/python/ops/rnn_cell_impl.py`
+
+### 2.1 BasicRNN:
+
+`BasicRNN`定义了一个的 RNNCell 中的基础运算。
+
+在阅读源码之前，我们先对源码中出现的一些成员变量/术语作下专门的解释：
+
+1. `num_units`: 等同于`state_size`，表示隐含向量$$h$$的纬度；
+2. `input_size`: 输入数据向量的大小；
+3. `output_size`: 输出向量output的大小；
+4. `time_step/sequence_length`: 序列长度。例如RNN一次要处理N个句子，每个句子的长度为10（padded之后），这次处理的time_step = 10；
+
+在下面的代码中，是`BasicRNNCell`对 Cell 内部参数的构建和定义。其中可以看到：
+* `self._kernel`: 其实在这里，kernel = W = concat([W, U]), 将这两个矩阵$$W$$, $$U$$连接起来，主要是为了方便
+在调用`call`函数时，公式$$h = f(Ux + Wh + b)$$ 能够只运用一次矩阵乘法即可。因此，$$kernel \in R^{(inputsize + numunit) \times numunit}$$
+* `self._bias`: 偏置项，Shape = (num\_units, )
+
+{% highlight python %}
+@tf_utils.shape_type_conversion
+def build(self, inputs_shape):
+    if inputs_shape[-1] is None:
+      raise ValueError("Expected inputs.shape[-1] to be known, saw shape: %s"
+                       % str(inputs_shape))
+    _check_supported_dtypes(self.dtype)
+
+    input_depth = inputs_shape[-1]
+    # NOTE Here kernel = W = concat([W, U], 0), with Shape: 
+    # (input_size+state_size, state_size)
+    self._kernel = self.add_variable(
+        _WEIGHTS_VARIABLE_NAME,
+        shape=[input_depth + self._num_units, self._num_units])
+    self._bias = self.add_variable(
+        _BIAS_VARIABLE_NAME,
+        shape=[self._num_units],
+        initializer=init_ops.zeros_initializer(dtype=self.dtype))
+
+self.built = True
+{% endhighlight %}
+
+在下面的这段代码中，反应了 `BasicRNNCell` 内部是如何进行一次 call 的。其中值得注意的有两点：
+* 代码中直接利用 `self._kernel` 和 连接后的input, state 进行一次大的矩阵乘法，完成了公式 $$(W \times input + U \times state)$$
+* **值得注意的是，在函数的结尾，可以看到函数的返回，所以这里的output并不是我们想当然的`y`输出值。实际上，`output = new_state`，因此在 `BasicRNNCell` 中，`state_size = output_size`**
+
+{% highlight python %}
+def call(self, inputs, state):
+    """Most basic RNN: output = new_state = act(W * input + U * state + B)."""
+    _check_rnn_cell_input_dtypes([inputs, state])
+    # NOTE: Here since kernel = W is concat, therefore:
+    # gate_input = (W * input + U * state)
+    gate_inputs = math_ops.matmul(
+        array_ops.concat([inputs, state], 1), self._kernel)
+    gate_inputs = nn_ops.bias_add(gate_inputs, self._bias)
+    output = self._activation(gate_inputs)
+    # NOTE: In RNN source code, output = state
+    return output, output
+{% endhighlight %}
+
+
+
+## 0x03. 引用
+1. [1].[知乎专栏：TensorFlow中RNN实现的正确打开方式](https://zhuanlan.zhihu.com/p/28196873)
+2. [2].[colah's blogs](http://colah.github.io/posts/2015-08-Understanding-LSTMs/)
