@@ -1,0 +1,240 @@
+---
+layout: post
+title: "RNN系列：Seq2Seq的前世今生"
+modified:
+categories: 机器学习 
+description: "deep-learning rnn seq2seq attention"
+tags: [deep-learning rnn source-code seq2seq attention]
+comments: true
+mathjax: true
+share:
+date: 2019-04-03T21:25:18+21:12
+---
+
+> 本文是 RNN 系列的第三篇文章，旨在从三篇经典的论文中介绍 Seq2Seq 的演进过程，并且着重对 Seq2Seq 中的 Attention 机制进行介绍。
+
+## 0x01. 引言
+
+Seq2Seq 可以算是近年来RNN模型领域中最成功的应用模式之一。该模式将输入长度N的序列，通过RNN网络生成长度为M的另一个序列，广泛的应用在如机器翻译、智能问答、拼写纠错（Seq2Seq + CRF），命名实体识别等领域中。因此，深入的了解 Seq2seq 模型，能够对RNN系列有更上一层楼的认知。
+
+本文主要从以下三篇经典论文中，介绍 Seq2Seq 在NMT（Neural Machine Translation）的演进过程：
+
+1. [Sequence to sequence learning with neural networks.](https://arxiv.org/pdf/1409.3215.pdf) : NIPS'14 收录的论文，由Google Ilya Sutskever 大神等人的著作。算是 Sequence to Sequence 的开山之作。
+2. [Neural machine translation by jointly learning to align and translate.](https://arxiv.org/pdf/1409.0473.pdf) : Bahdanau等人于被ICLR'15 收录的论文，是 Attention 机制在 Seq2Seq 领域中的首次引入；
+3. [Effective approaches to attention-based neural machine translation.](https://arxiv.org/pdf/1508.04025.pdf) : 斯坦福Luong 等人于NIPS'15 收录的论文，讨论了若干种Attention形式和架构在 Seq2Seq 中的应用。
+
+## 0x02. 深入了解Seq2Seq 结构
+
+### 2.1 基础架构
+Sequence to Sequence，物如其名，作用于序列输入，同时生成新的序列输出。是一个典型的 encoder-decoder 模型。其中:
+1. Encoder 和 Decoder 模型都是一个 RNN 网络， 例如 LSTM or GRU Cell；
+2. Encoder 模型利用 RNN 网络，将输入序列转化为一个固定大小(fixed-size)的context-vector $$c$$；
+3. Context vector $$c$$ 是对输入序列的一个总结信息，作为Decoder 模型的初始 hidden-state 输入到模型中；
+4. Decoder 模型结合 context-verctor 和 上一步的预测结果，逐步预测当前结果，直至结束。
+
+<figure>
+	<a href=""><img src="/assets/images/seq2seq/seq2seq.jpg" alt="" width="700" heigh="300"></a>
+    <figcaption><a href="" title="">Seq2Seq经典结构，出自引用[[1](https://arxiv.org/pdf/1409.3215.pdf)]</a></figcaption>
+</figure>
+
+模型本身是很容易理解的。我还记得当时作为初学者，看完架构后有几个问题困扰着我：
+
+1. **模型的输入是什么？**
+
+    以机器翻译为例子，输入的句子往往会在前后加上 `<start>` `<end>` 标记来表示句子的开始和结束。
+    句子中的单词会被转化为唯一的token-id，并且所有的句子统一pad 到固定的长度。
+
+2. **为什么所有（或者同一个batch）的输入需要pad到固定的长度？**
+
+    以机器翻译为例子，输入的句子都会被pad到固定的长度(或者同一个batch的句子长度一致)。
+    这样做的主要原因在现代机器学习框架中，训练数据往往是按照batch批次输入的，
+    因此，每个批次的句子长度都得保证一致。
+
+3. **模型的输出是什么？Decoder 如何判定序列输出结束？**
+
+    模型 decoder 的每一步中，会输出一个大小为输出词表的one-shot向量。其表示当前输出词表中所有单词应该输出的概率向量。当Decoder 预测到结束符（例如 `EOS` 或者 `<end>`）时，序列输出结束。
+
+
+### 2.2 双向RNN网络(Bidirectional RNN Network)
+序列化的RNN结构，使得在 timestep $$t$$ 时刻，输出的隐向量 $$h_t$$ 仅仅能够捕捉到前面序列的信息。而双向 RNN 网络结构，则是令 $$t$$ 时刻的隐向量 $$h_t$$ 能够同时捕捉到来自前后两个方向的信号。
+使得模型能够具备更有效的刻画数据的能力。
+
+<figure>
+	<a href=""><img src="/assets/images/seq2seq/bilstm.png" alt="" width="600" heigh="300"></a>
+    <figcaption><a href="" title="">双向LSTM结构</a></figcaption>
+</figure>
+
+一个双向的RNN网络包含了一个**前向(forward)** 和 一个 **后向(backward)** 的层(Layer)。其中:
+1. 前向RNN网络 $$\overrightarrow{f}$$ 输入正序的序列($$x_1$$ 到 $$x_{T_x}$$)，生成一系列的前向hidden-state($$\overrightarrow{h}_1$$, ... $$\overrightarrow{h}_{T_x}$$)
+2. 反向RNN网络 $$\overleftarrow{f}$$ 输入反序的序列($$x_{T_x}$$ 到 $$x_1$$)，生成一系列的反向hidden-state($$\overleftarrow{h}_1$$, ... $$\overleftarrow{h}_{T_x}$$)
+3. 通过将 forward-hidden-state $$\overrightarrow{h}_j$$ 和 $$\overleftarrow{h}_j$$ 通过函数$$g$$融合起来(常见的方式有concat、sum、average等)，得到 $$h_j = g(\overrightarrow{h}_j^T; \overleftarrow{h}_j^T)$$ 作为 timestep $$j$$ 的hidden-state
+
+在最新的 [tensorflow 2.0 API](https://www.tensorflow.org/api_docs/python/tf/keras/layers/Bidirectional) 中，可以通过 `tf.keras.layers.Bidirectional` 接口轻松实现双向的 RNN 序列网络。
+
+{% highlight python %}
+model = Sequential()
+model.add(Bidirectional(LSTM(10, return_sequences=True), input_shape=(5,
+10)))
+model.add(Bidirectional(LSTM(10)))
+model.add(Dense(5))
+model.add(Activation('softmax'))
+model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+{% endhighlight %}
+
+
+### 2.3 Beam-Search
+在目前阶段，Beam-Search算法基本也是Seq2Seq网络的标配。下面的篇幅，主要以问答的形式，来对Beam-Search算法有一个本质的了解，详细的可以参考引用文章。
+
+1. **BeamSearch算法主要应用在哪一个阶段（Train or Test），主要用于解决什么问题？**
+
+    BeamSearch 算法主要应用在于 Seq2Seq 网络在 Test 预测阶段。其主要目的是为了**寻找概率上更优的序列输出**。我们先来回顾下Decoder的工作流程：
+
+    decoder在每步 $$t$$ 输出时，会根据 Softmax 函数结果，**贪心**的选择概率最大的$$y_t$$ 作为当前步骤的输出，同时将该值作为输入，预测下一阶段的 $$y_{t+1}$$。
+    然而，每步的贪心选择最优，并不能保证最终输出的序列$$p(y_1, y_2,... y_{T_x}|x_1,x_2...x_{T_x})$$ 最优。
+
+--- 
+
+2. **BeamSearch算法的具体算法过程时怎样的？**
+
+    先说结论：**BeamSearch本质上还是贪心算法，只不过通过扩大搜索范围，在一定程度上寻找更优的解决方案。** 
+    BeamSearch 中有一个参数B (Beam width)集束宽，表示在每一步骤中挑选最优的Top B 结果。
+
+    1. 在 decoder 预测阶段，timestep $$t$$ 时，每次选择**得分最高**的 $$B$$ 个结果；
+    2. 将第一步中的 $$B$$ 个结果$$\{y_t^1... y_t^{B}\}$$作为 timestep $$t+1$$ 时的输入进行下一步计算（相当于运行 $$B$$ 次的 RNNCell Forward 过程。）
+    3. 循环上面的两个步骤，直到序列预测结束。
+
+--- 
+
+3. **每一步迭代过程中，是如何选择得分最高的 B 个结果？**
+
+    所谓的得分最高，其实可以理解该输出结果的条件概率最大。例如：
+
+    1. 对于 $$t = 0$$ 的阶段，则选择 $$P(y_0 \vert \{x_1...x_{T_x}\})$$ 的Top $$B$$ 值。
+    2. 对于 $$t = 1$$ 的阶段，则条件概率定义为：
+    $$P(y_1, y_0^{B_i} | \{x_1...x_{T_x}\}) = P(y_1 | y_0^{B_i}, \{x_1,...x_{T_x}) \times P(y_0^{B_i} | \{x_1...x_{T_x}\}), i \in \{1...B\}$$ 
+    假如输出词表 $$N = 1000$$，则在 $$1000 \times B$$ 个条件概率中选择 top $$B$$ 的结果；
+    3. 同理于 $$t = 2,3...$$ 的情况。
+
+
+## 0x03. Attention in Seq2Seq
+
+原生Seq2Seq模型中，最大的问题来源于在 Encoder 阶段，将源句子的所有信息都压缩到一个固定长度的context向量中。这对于一些较长的句子，信息量会被大量丢失，导致模型对数据的刻画能力不足。而 Attention 机制的引入，则是为了弥补这个主要的缺点。
+
+### 3.1 Bahdanau Attention
+论文[2][Neural Machine Translation by Jointly Learning to Align and Translate ](https://arxiv.org/pdf/1409.0473.pdf)算是Attention模型在NLP领域应用的鼻祖了。这一小节的标题之所以叫做 Bahdanau Attention，一方面是因为 Bahdanau 是该论文的第一作者，其次在 tensorflow 中关于Attention 的API中，也是按照作者进行定义的（API Doc: [tf.contrib.seq2seq.BahdanauAttention](https://www.tensorflow.org/api_docs/python/tf/contrib/seq2seq/BahdanauAttention)）
+
+在这篇论文中，作者将 Attention 机制引入到 NMT 领域中的Seq2Seq模型。在机器翻译领域中，Attention机制引入了一种对齐(align)的概念，将源语言句子中的单词和输出语言中的单词进行对齐。传统的Seq2Seq模型，将输入句子压缩成一个固定的context-vector $$c$$；而对于Attention机制，则会为每个输出的$$y_t$$，生成不同的context-vector $$c_t$$。
+
+在开始之前，我们先对接下来会遇到的符号和变量做统一的定义和规范（和下一小节的`Luong Attention`符号作统一）：
+
+1. $$\bar{h}_s$$: 输入阶段的 timestep $$s$$，RNN encoder模型输出的 hidden-state 向量.
+2. $$h_t$$: 序列输出阶段的 timestep $$t$$，RNN decoder 模型输出的 hidden-state 向量.
+3. context-vector $$c_t$$: 在 decoder 序列输出第 $$t$$ 个阶段时，由 encoder 总结的上下文向量。
+
+
+#### 3.1.1 Soft-Attention 机制推导:
+对于这个Attention模型，我们从结果$$y_i$$ **反推** 到输入$$\{x_1...x_{T_x}\}$$。来阐述 Attention 机制的作用过程：
+
+1. 在输出阶段 $$t$$，**结果**$$y_t$$ 的值由上一阶段输出 $$y_{t-1}$$，当前阶段的隐向量 $$h_t$$ 和 当前阶段的context 向量 $$c_t$$ 共同作用：$$P(y_t \vert y_1...y_{t-1}, \mathbf{x}) = g(y_{t-1}, h_t, c_t)$$
+2. 对于输出阶段 $$t$$，**隐向量** $$h_t$$ 则由上一隐状态 $$h_{t-1}$$，前一阶段输出 $$y_{t-1}$$，context-vector $$c_t$$ 共同作用：$$h_t = f(h_{t-1}, y_{t-1}, c_t)$$
+3. 每个输出的 $$y_t$$，会有一个单独对应的 **context-vector $$c_t$$**；而$$c_t$$则是由一系列的 encoder 阶段产生的hidden-state($$\bar{h}_1, \bar{h}_2 ... \bar{h}_{T_x}$$) 作用而成：
+
+    $$
+    c_t = \sum_{j=1}^{T_x} \alpha_{tj}\bar{h}_j
+    $$
+
+4. 在上面第三步中，**权重(weight) $$\alpha_{tj}$$**反映了 encoder 阶段 hidden-state $$\bar{h}_j$$ 对 context-vector $$c_t$$ 的作用贡献权重。其中，这些权重因子，是经过 **attention-score** $$e_{tj}$$ **Softmax 归一化**而成：
+
+    $$
+    \alpha_{tj} = \frac{exp(e_{tj})}{\sum_{k=1}^{T_x}exp(e_{tk})}
+    $$
+
+5. 上面第4步中提到的 **attention-score $$e_{tj}$$**，则是由输入位置 $$j$$ 所产生的 hidden-state: $$\bar{h}_j$$ 和decoder $$t-1$$ 阶段中的hidde-state $$h_{t-1}$$ 共同作用：$$e_{tj} = a(h_{t-1}, \bar{h}_j)$$。
+本质上反应了位置 $$j$$ 附近的输入(因为架构上采取的是双向RNN， 因此是使用**附近**一词) 和 输出位置 $$j$$ 的吻合程度。其中，函数$$a$$ 可以认为是一个对齐(align)模型；
+
+6. 论文中，align-model 也是一个神经网络，同样可以通过整个模型一起训练。如果网络的输入和输出长度分别为 $$T_x$$ 和 $$T_y$$，则生成的 attention-scores 应该是一个大小为 $$T_x \times T_y$$的矩阵。论文中align-model被定义为：
+
+    $$
+    a(h_t, \bar{h}_j) = v_a^{T}tanh(W_ah_t + U_a\bar{h}_j)
+    $$
+
+    其中 $$W_a \in R^{n \times n}, U_a \in R^{n \times 2n}, v_a \in R^{n}$$，$$n$$为 hidden-state 向量的长度。
+
+<figure>
+	<a href=""><img src="/assets/images/seq2seq/attention_1.jpg" alt="" width="400" heigh="500"></a>
+    <figcaption><a href="" title="">BahdanauAttention 结构，出自引用[[2]]</a></figcaption>
+</figure>
+
+本质而言，在这篇文章中，attention 的引入使得模型在学习机器翻译数据的时候引入了对齐的概念。而往往在很多任务中，预测某一个单词/分类往往只需要局部的信息，而attention机制则让模型在不同的输出，对模型的输入有不同的关注点。从而提升了模型对输入输出序列的刻画能力；
+
+<figure>
+	<a href=""><img src="/assets/images/seq2seq/attention_score.jpg" alt="" width="500" heigh="300"></a>
+    <figcaption><a href="" title="">经典图片，通过Attention Score 反映了输入输出句子的对齐关系（越明亮表示权重越大）</a></figcaption>
+</figure>
+
+### 3.2 Luong Attention
+
+Luong Attention, 来自于引用论文[3][Effective approaches to attention-based neural machine translation](https://arxiv.org/pdf/1508.04025.pdf)。同样也是以一作作者命名的Attention机制，Tensorflow 中API地址： [tf.contrib.seq2seq.LuongAttention](https://www.tensorflow.org/api_docs/python/tf/contrib/seq2seq/LuongAttention)。该论文同样也是在NMT领域中应用 Attention 机制，基本结构和之前保持的一致，但是有细致的不同和优化：
+
+在这里我们直接指出Luong Attention 和 BahdanauAttention 之间的区别：
+
+1. **Decoder 输出阶段隐含向量 $$h_t$$ 的生成方式：**
+
+    * 在BahdanauAttention, **隐向量** $$h_t$$ 则由上一隐状态 $$h_{t-1}$$，前一阶段输出 $$y_{t-1}$$，context-vector $$c_t$$ 共同作用：$$h_t = f(h_{t-1}, y_{t-1}, c_t)$$
+    * 在LuongAttention 中，隐向量 $$h_t$$ 则跟context-vector $$c_t$$ 无关。$$h_t = f(h_{t-1}, y_{t-1})$$。
+
+2. **Attention-Score的产生方式不一样：**
+
+    * 在 BahdanauAttention 中，Attention-Score 的计算方式为：$$e_{tj} = align(h_{t-1}, \bar{h}_j)$$。依赖的上一阶段 $$t-1$$ 的隐含向量 $$h_{t-1}$$；
+    * 在 LuongAttention 中，Attention-Score 的计算方式为： $$e_{tj} = align(h_t, \bar{h}_j)$$。依赖的是当前阶段的 $$t$$ 的隐含向量；$$h_{t}$$
+
+3. **对齐模型align-model 的计算方式不一样：**
+
+    在 LuongAttention 中，提供了三种不一样的对齐方式。其中 general 方式的效果验证是最好的：
+
+    <figure>
+        <a href=""><img src="/assets/images/seq2seq/align_model.jpg" alt="" width="350" heigh="350"></a>
+    </figure>
+
+4. **输出$$y_t$$的方式不一致：**
+
+    * 在 BahdanauAttention 中，$$y_t$$ 一般是由隐含向量 $$h_t$$ 外接一层线性层 + Softmax 生成；
+    * 在 LuongAttention 中，引入了一个新的中间变量 attention-hidden-state: $$\tilde{h}_t = tanh(W_c[c_t;h_t])$$。通过将$$c_t$$ 和 $$h_t$$ concate 并经过线性层，得到两个的信息融合交互信息；
+    得到的 $$\tilde{h}_t$$ feed-forward 到一个 softmax-layer 中，得到输出 $$y_t$$ 的输出概率分布：$$p(y_t|y < t, x) = softmax(W_s\tilde{h}_t)$$
+
+<figure>
+	<a href=""><img src="/assets/images/seq2seq/luong.jpg" alt="" width="500" heigh="500"></a>
+    <figcaption><a href="" title="">LuongAttention 结构，出自引用[[3]]</a></figcaption>
+</figure>
+
+上面的篇幅中，我们具象到细节中两者的不同。从大层面来说，LuongAttention 比 BahdanauAttention 更加的简单，计算路径也更加的明了：$$h_t \to a_t \to c_t \to \tilde{h}_t $$。而对于 BahdanauAttention 来说。
+则变成了 $$h_{t-1} \to a_t \to c_t \to h_t$$。
+
+其次，LuongAttention 模型中，Attention 层和 RNN-Layer 层之间没有前后顺序的依赖（因为$$h_t$$的计算不再依赖于$$c_t$$，因此完全可以先把所有$$h_t$$计算出来），Attention 层可以理解为完全架在 RNN 层上方的，两者的分离度更好。
+
+#### 3.2.2 Local Attention
+
+前面介绍的两种Attention机制，本质上都是数据 Global-Attention，因为每个输出的单词，都会考虑所有输入单词对齐的影响。在篇幅很长的文章时，不仅会浪费计算资源，还会导致模型性能的下降。因此Local Attention 机制应运而生。
+
+在论文中，Local Attention 会先设置一个预测函数，预测当前解码是要对齐的源语言端的位置 $$p_t$$，然后通过固定大小 $$D$$ 的上下文窗口$$[p_t - D, p_t + D]$$，仅考虑窗口内的词所产生的hidden-state；由于窗口大小是固定的，因此
+attention向量 $$a_t \in R^{2D + 1}$$
+
+对于位置预测函数，论文中同样的给出了两种的方式：
+
+1. Monotonic alignment (local-m): 这种方式很简单，其实就是令 $$p_t = t$$
+2. Predictive alignment (local-p): 这种方式通过一个简单的神经网络，预测位置 $$p_t = S \dot sigmoid(\mathbf{v}_p^Ttanh(\mathbf{W}_p\mathbf{h}_t))$$。 其中 S 是源句子的长度；本质上是通过一个神经网络，预测位置$$p_t \in [0, S]$$ 的位置；
+
+除了位置预测函数之外，论文中还在align-score的生成过程中，添加了一个基于位置$$p_t$$为中心点，$$\sigma = \frac{D}{2}$$的高斯分布。**本质上是令align-score根据其位置距离$$p_t$$的远近进行衰减。**
+
+$$
+a_t(s) = align(h_t, \bar{h}_s)exp(-\frac{(s-p_t)^2}{2\sigma^2})
+$$
+
+## 0x04. 引用
+* [1].[Sutskever, Ilya, Oriol Vinyals, and Quoc V. Le. "Sequence to sequence learning with neural networks." Advances in neural information processing systems. 2014.](https://arxiv.org/pdf/1409.3215.pdf)
+* [2].[Bahdanau, Dzmitry, Kyunghyun Cho, and Yoshua Bengio. "Neural machine translation by jointly learning to align and translate." arXiv preprint arXiv:1409.0473 (2014).](https://arxiv.org/pdf/1409.0473.pdf)
+* [3].[Luong, Minh-Thang, Hieu Pham, and Christopher D. Manning. "Effective approaches to attention-based neural machine translation." arXiv preprint arXiv:1508.04025 (2015).](https://arxiv.org/pdf/1508.04025.pdf)
+* [4].[Seq2Seq中的beam search算法](https://zhuanlan.zhihu.com/p/36029811?group_id=972420376412762112)
+* [5].[Nlp中的attention mechanism](https://zhuanlan.zhihu.com/p/27766967)
+
+
