@@ -210,7 +210,6 @@ Luong Attention, 来自于引用论文[3][Effective approaches to attention-base
 上面的篇幅中，我们具象到细节中两者的不同。从大层面来说，LuongAttention 比 BahdanauAttention 更加的简单，计算路径也更加的明了：$$h_t \to a_t \to c_t \to \tilde{h}_t $$。而对于 BahdanauAttention 来说。
 则变成了 $$h_{t-1} \to a_t \to c_t \to h_t$$。
 
-其次，LuongAttention 模型中，Attention 层和 RNN-Layer 层之间没有前后顺序的依赖（因为$$h_t$$的计算不再依赖于$$c_t$$，因此完全可以先把所有$$h_t$$计算出来），Attention 层可以理解为完全架在 RNN 层上方的，两者的分离度更好。
 
 #### 3.2.2 Local Attention
 
