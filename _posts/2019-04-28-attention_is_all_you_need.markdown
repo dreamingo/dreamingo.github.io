@@ -126,13 +126,18 @@ $$
 在上述的第二步中，我们展示了Self Attention层中输入 $$X$$ 是如何 生成输出 $$Z$$ 的。假设定义Self Attention层中的kernel $$W = [W_Q, W_K, W_V]$$。
 那么，所谓的MultiHead，其实就是：**定义多个kernel $$\{W_0, W_1, W_2...\}$$，多做几次 上述的 SelfAttention 过程，将生成的 $$\{Z_0, Z_1, Z_2..\}$$ concat 连接起来。**，然后再乘以一个权重矩阵 $$W_o$$，最终输出结果 $$Z$$
 
+$$
+MultiHead(Q, K, V) = Concat(head_1, head_2, ..., head_n)W^O \\
+        where \  head_i = Attention(QW_i^Q, KW_i^K, VW_i^V)
+$$
+
 根据论文中的描述，Multi head 通过不同kernel 来做attention，使得模型在不同的子空间（subspace）对attention 进行建模。**MultiHead 的本质，其实和CNN 卷积kernel的概念非常类似。
 通过不同的kernel抽取不同的特征，来达到从不同子空间对数据进行建模的效果。**
 
 
 <figure>
-	<a href=""><img src="/assets/images/transformer/multihead.jpg" alt="" width="600" heigh="600"></a>
-    <figcaption><a href="" title=""> MultiHead 的具体形态 </a></figcaption>
+	<a href=""><img src="/assets/images/transformer/multihead.jpg" alt="" width="600" heigh="500"></a>
+    <figcaption><a href="" title=""> Scaled-dot-product Attention 和 MultiHead 的具体形态 </a></figcaption>
 </figure>
 
 ### 2.3 Position-wise Feed-Forward Networks
@@ -316,7 +321,16 @@ not successful in switching to batch normalization (and possibly ghost batch nor
 
 
 ## 0x06. 个人感想
-未完待续...
+Transformer 的提出，令 NLPer 从 RNN 中无法并行的痛苦中解放了出来，同时利用 LN + residual 等技术将模型堆叠得很深，
+提升模型的容量和对数据的刻画能力。算法中利用模型深度 + MultiHead Self-Attention 这个组合，实现了**大力出奇迹**的特征建模抽取的能力。
+
+但是总得而言， Transformer 也并非毫无缺点：
+
+1. Transformer 中提出的 Positional embedding 想法个人感觉过于儿戏，事实也证明在一些位置非强相关的例子（例如翻译），Transformer 取得了非常棒的成就，
+但是在一些位置强相关（例如序列标注，命名实体识别等）的任务上，效果会比精心优化的 RNN 模型要差些。
+
+2. Transformer 对序列的全方位Attention建模，在输入序列长度很长的时候，复杂度会大大的增加（平方级别上升）。对此，Google也提出了一个 restrict 版本的 Transformer 模型，
+只对滑动窗口范围内的序列进行 attention 关联。而转过念头一想，**这种做法就已经跟 CNN kernel 局部抽取特的做法相差无几了。**
 
 
 ## 0x04. 引用
