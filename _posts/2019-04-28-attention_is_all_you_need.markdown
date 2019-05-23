@@ -332,6 +332,9 @@ Transformer 的提出，令 NLPer 从 RNN 中无法并行的痛苦中解放了�
 2. Transformer 对序列的全方位Attention建模，在输入序列长度很长的时候，复杂度会大大的增加（平方级别上升）。对此，Google也提出了一个 restrict 版本的 Transformer 模型，
 只对滑动窗口范围内的序列进行 attention 关联。而转过念头一想，**这种做法就已经跟 CNN kernel 局部抽取特的做法相差无几了。**
 
+3. Transformer 整体网络容量大，参数数量巨大，模型调参困难和较难收敛。同时在实际应用中， 大量轻量级的应用训练数据有限的前提下，难以喂饱 Transformer 这个大怪兽，不收敛也是常见的事情。
+这个时候较为轻量级的 RNN 和 CNN 模型反而是一种比较合理的选择。
+
 
 ## 0x04. 引用
 * [1].[Vaswani, Ashish, et al. "Attention is all you need." Advances in neural information processing systems. 2017.](http://papers.nips.cc/paper/7181-attention-is-all-you-need.pdf)
