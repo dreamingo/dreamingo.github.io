@@ -1,0 +1,338 @@
+---
+layout: post
+title: "2019年了，该给Vim插件来一波新升级"
+modified:
+categories: Vim
+description: "new fashion plugins for vim in 2019"
+tags: [vim, linux, geek]
+comments: true
+mathjax: true
+share:
+date: 2019-05-28T10:15:29+21:12
+---
+
+## 0x01. 前言：
+
+作为多年的Vim忠实用户，近两三年已经比较少大规模的折腾（更新、替换）插件了。然而，随着近年来 Vim8 异步功能的发布，掀起了插件更新换代潮，不得不说，很多的插件，无论从性能和体验上都着实令人惊艳。于是乎，重新燃起自己的『折腾』劲头，给自己的 Vim 插件来了一波升级。
+
+Vim 8 所带来的异步任务机制，是从根本上带来这次插件升级潮的原因。在 Vim 7 时代，如果需要调用一个外部程序（和补全Server进行通信、
+linter语法检查、文件查找等），会导致整个 Vim 会卡住等待作业返回，对实际的使用体验上带来了巨大的影响，这也是几年前大家诟病说 Vim 不适合安装笨重插件的主要原因。
+当然，除了异步功能外，例如 Ternimal 等功能也是 Vim8 这次升级后，大家口口相赞的功能之一，更多的相关feature大家可以自行查询。
+
+同时，由于本人近一两年来写Python比较多，因此大部分的功能，以在 Vim 中写Python实践为主。同时，本文介绍的插件不作小白科普式介绍，具体的请阅读官方文档或者一些科普文章。此外具体的Vim8编译安装本文就不介绍了，同时需要安装的 Vim8 链接 Python 功能：
+
+<figure>
+	<a href=""><img src="/assets/images/vim8/version.jpg" alt="" width="650" heigh="300"></a>
+    <figcaption><a href="" title="">Vim8 链接对应的Python库</a></figcaption>
+</figure>
+
+最后可以参考我配置的 [Vimrc](https://github.com/dreamingo/vim-config/blob/master/.vimrc)
+
+
+## 0x02. 更新插件
+
+### 2.1 插件管理 `vim-plug`
+
+在这之前，大部分网上Vim插件教程，都推荐大家使用 [Vundle](https://github.com/VundleVim/Vundle.vim)，包括我自己，也使用了 Vundle 很多年了。然而，这次更新的主角 [vim-plug](https://github.com/junegunn/vim-plug)，跟 Vundle 相比，具有以下的优点：
+
+* 速度奇快！支持并行更新安装；
+* 全异步安装、管理，避免安装过程中卡住Vim；
+* **延迟加载，在插件使用时才加载，加快Vim启动速度；**
+* 可自定义 Post-Update Hook，例如更新后需要手动执行某个脚本(某些插件下载后还需要动手编译安装);
+* 支持使用插件的某个分支、tag等，默认使用主分支；
+
+
+```vimscript
+Plug 'w0rp/ale'
+Plug 'liuchengxu/space-vim-dark'
+" 延迟加载，使用到命令时才加载对应的插件
+Plug 'scrooloose/nerdtree', { 'on':  'NERDTreeToggle' }
+" Post-update hook, 更新下载后，自动执行文件夹下的 install.sh 文件
+Plug 'Yggdroot/LeaderF', { 'do': './install.sh' }
+Plug 'liuchengxu/eleline.vim'
+" 使用额外分支；
+Plug 'python-mode/python-mode', { 'branch': 'develop' }
+```
+
+### 2.2 语法检查：`Ale`
+
+在实际的代码编写阶段，无论是代码规范、语法检查。2019年了，都已经不在推荐使用 [Syntastic](https://github.com/vim-syntastic/syntastic)，既不能做到实时检查，而常常会因为同步的设置导致语法检查而卡顿。
+
+Ale项目也因为 LSP(Lanuage Server Protocol)的支持，功能触角也走的越来越远。利用补全、定义跳转等。然而，我们这里还是主要关注在语法检查阶段。Ale本身提供的是一个语法检查的框架，实际上对各语言的支持还是得靠不同的子工具（Python的`pylint/flake8`, C-family的gcc等）工作。即使是同一个语言，就 C/C++ 而言，就支持：gcc, clang, cppcheck 以及 clang-format 等。
+
+在下图是 Ale 利用 `flake8` 来做 Python 语法检查的示例，可以看到有整个语法检查框架包括：
+
+* Warning 提示：在下图中用的是黄色小点表示；
+* Error提示：在下图中用的是红色小点表示；
+* 具体的出错说明；
+
+<figure>
+	<a href=""><img src="/assets/images/vim8/ale.jpg" alt="" width="400" heigh="200"></a>
+    <figcaption><a href="" title="">Ale语法检查功能提示</a></figcaption>
+</figure>
+
+在这里贴出了我自己 Vim 中关于 Ale 的配置，其中包括提示样式、检查时机、不同语言单独的配置等。
+
+```vim
+" =========================================================================
+" ALE configure
+" 部分参考知乎回答 https://www.zhihu.com/question/19655689/answer/142118119
+" =========================================================================
+let g:ale_set_highlights = 0
+let g:ale_echo_msg_format = '[#%linter%#] %s [%severity%]'
+let g:ale_statusline_format = ['E•%d', 'W•%d', 'OK']
+
+let g:ale_sign_error = '•'
+let g:ale_sign_warning = '•'
+let g:ale_echo_msg_error_str = '✹ Error'
+let g:ale_echo_msg_warning_str = '⚠ Warning'
+
+let g:ale_completion_delay = 500
+let g:ale_echo_delay = 20
+let g:ale_lint_delay = 500
+" 如果 normal 模式下文字改变以及离开 insert 模式的时候运行 linter
+let g:ale_lint_on_text_changed = 'normal'
+let g:ale_lint_on_insert_leave = 1
+
+" Ignore line too long and multiple statement in oneline, indentaion is not a
+" multiple of four
+let g:ale_python_flake8_options = '--ignore=E501,E701,C0321,W0311,E111,E114'
+let g:ale_python_pylint_options = '--ignore=E501,E701,C0321,W0311,E111,E114'
+let g:ale_linters = {'python': ['flake8']}
+let g:ale_c_gcc_options = '-Wall -O2 -std=c99'
+let g:ale_cpp_gcc_options = '-Wall -O2 -std=c++14'
+```
+
+额外的，`Ale` 还支持自动化的代码格式。例如下面的配置可以令 `Ale` 在 Python 脚本保存的时候
+自动对代码格式。具体要不要设置这个选项就见仁见智了。
+
+```vim
+" 自动代码格式化
+let g:ale_fixers = {
+\  'python': [
+\    'remove_trailing_lines',
+\    'isort',
+\    'ale#fixers#generic_python#BreakUpLongLines',
+\    'yapf'
+\   ]
+\}
+let g:ale_fix_on_save = 1
+```
+
+我自身不太喜欢『被动』，利用 `LocalLeader`(`\`按键) + `=` 号来实现触发代码格式化
+
+```vim
+autocmd FileType python nnoremap <LocalLeader>= :0,$!yapf<CR>
+```
+
+
+### 2.3 自动补全插件 `YouCompleteMe`
+
+作为Vim中自动补全插件的『最强王者』，我还是一如既往的推荐它。尽管这几年来有一些后起之秀，如 [maralla/completor.vim](https://github.com/maralla/completor.vim) 等在也做的很不错了。但是论功能齐全和稳定，我还是推荐 YCM。YCM 社区繁荣，文档也齐全，同时版本演进很快，以前是半异步（偶尔会卡），2017年中进化成全异步（完全无等待了），配合Vim8 更加柔滑。
+
+鉴于官方文档齐全，外网上也有铺天盖地介绍YCM的安装和功能，所以这里我便不多说。在这里再强推一下韦易笑大神的一篇文章：[知乎专栏：韦易笑：YouCompleteMe 中容易忽略的配置](https://zhuanlan.zhihu.com/p/33046090)，按照文章配置后会有更好的补全体验。在这里有一点值得注意的是，如果大家用的是 `Anoconda` 对Python进行管理的话，那么在编译安装 YCM 时，请使用系统原生的Python进行编译安装，否则链接起来会报错。
+
+在YCM使用过程中，不同的项目往往会配置专属的 `.ycm_extra_conf.py`文件。对于Python项目而言，如果不同项目所用的Python解释器不同（例如Anaconda中不同的环境），则可以在项目根目录中创建 `.ycm_extra_conf.py`，添加如下定义：
+
+```python
+def Settings(**kwargs):
+    return {
+        'interpreter_path': '/Users/xxx/anaconda2/envs/conda-t2t/bin/python'
+    }
+```
+
+在这里，我也稍微贴一下自己的 YCM 相关的配置，其中主要的配置都有相关的中文注释，这里我主要说一下**定义跳转**的快捷键配置：
+
+在下面的配置中，我配置了 GoToDefinition 的快捷键为 `df`, GoToDeclaration 的快捷键为 `dc`。那么：
+
+* `<Leader>dc`: 在当前buffer中进行跳转；
+* `<Leader>vdc`: 创建一个verticle-split buffer中进行跳转；
+* `<Leader>sdc`: 创建一个horizontal-split buffer中进行跳转；
+* `<Leader><Leader>dc`: 创建一个新的tab buffer中进行跳转；
+
+```vim
+" =========================================================================
+" YCM 配置
+" =========================================================================
+" 部分参考来自[知乎专栏：韦易笑-YouCompleteMe 中容易忽略的配置]
+" (https://zhuanlan.zhihu.com/p/33046090)
+
+let g:ycm_auto_trigger = 1
+" 相关语言文件中，只需要输入符号的前两个字符，即可以自动触发 **语义补全**
+" （注意和符号补全的区别）
+let g:ycm_semantic_triggers =  {
+			\ 'c,cpp,python,java,go,erlang,perl': ['re!\w{2}'],
+			\ 'cs,lua,javascript': ['re!\w{2}'],
+			\ }
+" 屏蔽YCM的原型预览窗口
+set completeopt=menu,menuone
+let g:ycm_add_preview_to_completeopt = 0
+" 屏蔽 YCM 的诊断信息
+let g:ycm_show_diagnostics_ui = 0
+" 最小的identifier符号补全的起召数量
+let g:ycm_min_num_identifier_candidate_chars = 2
+" 从注释和字符串中也收集identifiers
+let g:ycm_collect_identifiers_from_comments_and_strings = 1
+" 在字符串中也可以补全
+let g:ycm_complete_in_strings=1
+let g:ycm_autoclose_preview_window_after_completion = 1
+" Goto configuration
+" Defines where GoTo* commands result should be opened. Can take one of the following values:
+" [ 'same-buffer', 'horizontal-split', 'vertical-split', 'new-tab', 'new-or-existing-tab' ]
+let g:ycm_goto_buffer_command = 'same-buffer'
+nnoremap <leader>dc :exec("YcmCompleter GoToDeclaration")<CR>
+nnoremap <leader>df :exec("YcmCompleter GoToDefinition")<CR>
+
+" Vertical split for Goto* Command
+nnoremap <leader>vdc :vs<CR>:exec("YcmCompleter GoToDeclaration")<CR>
+nnoremap <leader>vdf :vs<CR>:exec("YcmCompleter GoToDefinition")<CR>
+
+" Horizontal split for Goto* Command
+nnoremap <leader>sdc :sp<CR>:exec("YcmCompleter GoToDeclaration")<CR>
+nnoremap <leader>sdf :sp<CR>:exec("YcmCompleter GoToDefinition")<CR>
+
+" Tab split for Goto* Command
+nnoremap <leader><leader>dc :tab split<CR>:exec("YcmCompleter GoToDeclaration")<CR>
+nnoremap <leader><leader>df :tab split<CR>:exec("YcmCompleter GoToDefinition")<CR>
+"
+"
+"
+" 不需要每次加载额外的conf时都问询一次
+let g:ycm_confirm_extra_conf = 0
+let g:ycm_global_ycm_extra_conf = '/Users/xxx/.vim/plugged/YouCompleteMe/third_party/ycmd/.ycm_extra_conf.py'
+" 白名单控制
+let g:ycm_filetype_whitelist = { 
+			\ "c":1,
+			\ "cpp":1, 
+			\ "objc":1,
+			\ "sh":1,
+			\ "python":1,
+			\ "zsh":1,
+			\ }
+```
+
+另外，对于 Python 而言，YCM 底层是调用 Jedi 进行补全的。但是却没有完美的继承了 Jedi 文档搜索和参数提示的功能。因此，我在配置中，利用 vim-script 写了一个简单的 `get-doc` 功能：
+
+该配置使得我在 normal模型下，按下 `K` Toggle 一个preview-window来显示当前光标下 token 的文档：
+
+<figure>
+	<a href=""><img src="/assets/images/vim8/getdoc.jpg" alt="" width="450" heigh="400"></a>
+    <figcaption><a href="" title="">Normal模式下，按K toggle显示参数文档</a></figcaption>
+</figure>
+
+
+```vim
+" Normal 模型下，按K toggle显示token文档；
+function! GetMyDoc()
+    " 检查当前窗口是上一个编号的窗口是否为 preview-window
+    for nr in range(winnr()-1, winnr())
+        if getwinvar(nr, "&pvw") == 1
+            " 如果是，则关掉该preview window
+            pclose
+            return
+        endif  
+    endfor
+    YcmCompleter GetDoc
+endfunction
+nnoremap K :call GetMyDoc()<CR>
+```
+
+
+
+### 2.4 文件浏览、查找 `LeaderF`
+
+在这之前，我一直使用 [CtrlP](https://github.com/kien/ctrlp.vim) 作为我文件快速查找的工具，在小型项目中还行，但是在成千上万个文件的大项目中，CtrlP 缓慢的查询速度(主要是模糊匹配算法不佳)和传统Vim7同步的设置会让 Vim 整个卡住。而 [LeaderF](https://github.com/Yggdroot/LeaderF) 采取全异步的索引设置和改进过后的模糊算法，即使是上万个文件的大型项目中，能够使你在『千军万马中取上将首级』而不卡，保持更预约良好的打代码心态~
+
+值得注意的是，LeaderF 官方也介绍了，如果想要性能更上一层楼，可以手动编译 C-extension。同时，LeaderF的开发小哥 [Yggdroot](https://www.zhihu.com/people/yggdroot) 在知乎上也频发的发言，大家也可以踊跃关注哈
+
+在下面的配置中，`LeaderF`的功能主要划分了如下几项：
+* 文件的快速查找和定位(Ctrl-P)；
+* 历史打开文件buffer的查找(Ctrl-n)；
+* 文档中函数列表的浏览(F2)；
+* Vim中历史命令的查找(<Leader>cmd)；
+* 项目中，字符串的模糊匹配和查找(Ctrl-F)
+
+```vim
+" =========================================================================
+" LeaderF 配置
+" =========================================================================
+" Ctrl-P 文件的快速搜索和浏览
+let g:Lf_ShortcutF = '<c-p>'
+let g:Lf_ShortcutB = '<m-n>'
+" Ctrl-n: 最近打开文件的Mru查找；
+noremap <c-n> :LeaderfMru<cr>
+" 浏览模式浏览当前文档的函数
+noremap <F2> :LeaderfFunction!<cr>
+noremap <leader>cmd :Leaderf! cmdHistory<CR>
+" 利用rg 来对光标下的字符进行检索
+" search word under cursor, the pattern is treated as regex, and enter normal
+" mode directly
+noremap <C-F> :<C-U><C-R>=printf("Leaderf! rg -e %s ",expand("<cword>"))<cr>
+" 利用rg来list文件，避免使用git ls-file, 因为git ls-file 无法列出submodule文件
+let g:Lf_DefaultExternalTool = "rg"
+let g:Lf_UseVersionControlTool = 0
+" =========================================================================
+```
+
+下面出几个简答的效果图，看看效果：
+
+<figure>
+	<a href=""><img src="/assets/images/vim8/ctrlf.jpg" alt="" width="650" heigh="650"></a>
+    <figcaption><a href="" title="">LeaderF 利用rg进行字符串检索</a></figcaption>
+</figure>
+
+
+<figure>
+	<a href=""><img src="/assets/images/vim8/ctrlp.jpg" alt="" width="650" heigh="650"></a>
+    <figcaption><a href="" title="">LeaderF 项目文件的定位和检索</a></figcaption>
+</figure>
+
+
+### 2.5 其他杂项：
+
+#### 2.5.1 配色：
+
+我自己的配色参考的是[Space-Vim-Dark](https://github.com/liuchengxu/space-vim-dark)，还添加了灰色注释等配置：
+```vim
+"ref from https://github.com/liuchengxu/space-vim-dark
+set t_Co=256
+colorscheme space-vim-dark
+" grey comment
+hi Comment guifg=#5C6370 ctermfg=59
+hi pythonSelf  ctermfg=68  guifg=#5f87d7 cterm=bold gui=bold
+```
+
+#### 2.5.2 PyMode
+
+[PyMode](https://github.com/python-mode/python-mode)提供的功能非常丰富，然而在这里我只是把它作为 syntax 颜色增强和添加断点的功能(利用快捷键`<Leader>br`快速添加Python pdb 断点行，方便调试)：
+
+<figure>
+	<a href=""><img src="/assets/images/vim8/pdb.jpg" alt="" width="650" heigh="300"></a>
+    <figcaption><a href="" title="">添加断点和快速ipdb调试</a></figcaption>
+</figure>
+
+```
+" =========================================================================
+" PyMode: 禁止掉大部分功能，防止和ycm冲突
+" =========================================================================
+"
+let g:pymode_python = "python3"
+let g:pymode_lint_checkers = ['pyflakes']
+let g:pymode_trim_whitespaces = 0
+let g:pymode_options = 0
+let g:pymode_rope = 0
+
+let g:pymode_indent = 1
+let g:pymode_folding = 0
+let g:pymode_options_colorcolumn = 1
+let g:pymode_breakpoint_bind = '<leader>br'
+
+let g:pymode_lint = 0
+" 禁止pymode中显示document的方式，利用ycm的getdoc来做
+let g:pymode_doc = 0
+```
+
+## 0x03. 参考引用：
+
+* [1][韦易笑：如何在 Linux 下利用 Vim 搭建 C/C++ 开发环境?](https://www.zhihu.com/question/47691414/answer/373700711)
+* [2][liuchengxu - 用 Vim 写 Python 的最佳实践是什么？](https://www.zhihu.com/question/19655689/answer/142118119)
