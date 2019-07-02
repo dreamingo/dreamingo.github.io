@@ -42,7 +42,7 @@ linter语法检查、文件查找等），会导致整个 Vim 会卡住等待作
 * 支持使用插件的某个分支、tag等，默认使用主分支；
 
 
-```vimscript
+```viml
 Plug 'w0rp/ale'
 Plug 'liuchengxu/space-vim-dark'
 " 延迟加载，使用到命令时才加载对应的插件
@@ -73,7 +73,7 @@ Ale项目也因为 LSP(Lanuage Server Protocol)的支持，功能触角也走的
 
 在这里贴出了我自己 Vim 中关于 Ale 的配置，其中包括提示样式、检查时机、不同语言单独的配置等。
 
-```vim
+```viml
 " =========================================================================
 " ALE configure
 " 部分参考知乎回答 https://www.zhihu.com/question/19655689/answer/142118119
@@ -121,7 +121,7 @@ let g:ale_fix_on_save = 1
 
 我自身不太喜欢『被动』，利用 `LocalLeader`(`\`按键) + `=` 号来实现触发代码格式化
 
-```vim
+```viml
 autocmd FileType python nnoremap <LocalLeader>= :0,$!yapf<CR>
 ```
 
@@ -150,7 +150,7 @@ def Settings(**kwargs):
 * `<Leader>sdc`: 创建一个horizontal-split buffer中进行跳转；
 * `<Leader><Leader>dc`: 创建一个新的tab buffer中进行跳转；
 
-```vim
+```viml
 " =========================================================================
 " YCM 配置
 " =========================================================================
@@ -221,7 +221,7 @@ let g:ycm_filetype_whitelist = {
 </figure>
 
 
-```vim
+```viml
 " Normal 模型下，按K toggle显示token文档；
 function! GetMyDoc()
     " 检查当前窗口是上一个编号的窗口是否为 preview-window
@@ -252,7 +252,7 @@ nnoremap K :call GetMyDoc()<CR>
 * Vim中历史命令的查找(<Leader>cmd)；
 * 项目中，字符串的模糊匹配和查找(Ctrl-F)
 
-```vim
+```viml
 " =========================================================================
 " LeaderF 配置
 " =========================================================================
@@ -293,7 +293,8 @@ let g:Lf_UseVersionControlTool = 0
 #### 2.5.1 配色：
 
 我自己的配色参考的是[Space-Vim-Dark](https://github.com/liuchengxu/space-vim-dark)，还添加了灰色注释等配置：
-```vim
+
+```viml
 "ref from https://github.com/liuchengxu/space-vim-dark
 set t_Co=256
 colorscheme space-vim-dark
@@ -311,7 +312,7 @@ hi pythonSelf  ctermfg=68  guifg=#5f87d7 cterm=bold gui=bold
     <figcaption><a href="" title="">添加断点和快速ipdb调试</a></figcaption>
 </figure>
 
-```
+{% highlight viml %}
 " =========================================================================
 " PyMode: 禁止掉大部分功能，防止和ycm冲突
 " =========================================================================
@@ -330,7 +331,7 @@ let g:pymode_breakpoint_bind = '<leader>br'
 let g:pymode_lint = 0
 " 禁止pymode中显示document的方式，利用ycm的getdoc来做
 let g:pymode_doc = 0
-```
+{% endhighlight %}
 
 ## 0x03. 参考引用：
 
