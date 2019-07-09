@@ -4,7 +4,7 @@ title: "2019年了，该给Vim插件来一波新升级"
 modified:
 categories: Vim
 description: "new fashion plugins for vim in 2019"
-tags: [vim, linux, geek]
+tags: [vim  linux  geek]
 comments: true
 mathjax: true
 share:
@@ -19,7 +19,7 @@ Vim 8 所带来的异步任务机制，是从根本上带来这次插件升级�
 linter语法检查、文件查找等），会导致整个 Vim 会卡住等待作业返回，对实际的使用体验上带来了巨大的影响，这也是几年前大家诟病说 Vim 不适合安装笨重插件的主要原因。
 当然，除了异步功能外，例如 Ternimal 等功能也是 Vim8 这次升级后，大家口口相赞的功能之一，更多的相关feature大家可以自行查询。
 
-同时，由于本人近一两年来写Python比较多，因此大部分的功能，以在 Vim 中写Python实践为主。同时，本文介绍的插件不作小白科普式介绍，具体的请阅读官方文档或者一些科普文章。此外具体的Vim8编译安装本文就不介绍了，同时需要安装的 Vim8 链接 Python 功能：
+由于本人近一两年来写Python比较多，因此大部分的功能，以在 Vim 中写Python实践为主。同时，本文介绍的插件不作小白科普式介绍，具体的请阅读官方文档或者一些科普文章。此外具体的 Vim8 编译安装本文就不介绍了，同时需要安装的 Vim8 链接 Python 功能：
 
 <figure>
 	<a href=""><img src="/assets/images/vim8/version.jpg" alt="" width="650" heigh="300"></a>
@@ -58,7 +58,7 @@ Plug 'python-mode/python-mode', { 'branch': 'develop' }
 
 在实际的代码编写阶段，无论是代码规范、语法检查。2019年了，都已经不在推荐使用 [Syntastic](https://github.com/vim-syntastic/syntastic)，既不能做到实时检查，而常常会因为同步的设置导致语法检查而卡顿。
 
-Ale项目也因为 LSP(Lanuage Server Protocol)的支持，功能触角也走的越来越远。利用补全、定义跳转等。然而，我们这里还是主要关注在语法检查阶段。Ale本身提供的是一个语法检查的框架，实际上对各语言的支持还是得靠不同的子工具（Python的`pylint/flake8`, C-family的gcc等）工作。即使是同一个语言，就 C/C++ 而言，就支持：gcc, clang, cppcheck 以及 clang-format 等。
+Ale项目也因为 LSP(Lanuage Server Protocol)的支持，功能触角也走的越来越远。如补全、定义跳转等。然而，我们这里还是主要关注在语法检查阶段。Ale本身提供的是一个语法检查的框架，实际上对各语言的支持还是得靠不同的子工具（Python的`pylint/flake8`, C-family的gcc等）工作。即使是同一个语言，就 C/C++ 而言，就支持：gcc, clang, cppcheck 以及 clang-format 等。
 
 在下图是 Ale 利用 `flake8` 来做 Python 语法检查的示例，可以看到有整个语法检查框架包括：
 
