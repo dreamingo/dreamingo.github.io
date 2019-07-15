@@ -35,7 +35,7 @@ $$
 
 $$
 \begin{equation}
-ln\frac{y}{1-y} = \mathbf{w}^T\mathbf{x} + b
+ln\frac{y}{1-y} = \mathbf{w}^T\mathbf{x} + b = logit(y)
 \tag{2}\label{eq:2}
 \end{equation}
 $$
