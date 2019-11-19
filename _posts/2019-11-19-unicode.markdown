@@ -1,0 +1,263 @@
+---
+layout: post
+title: "Unicode的文本处理二三事"
+modified:
+categories: 机器学习 
+description: "python unicode nlp"
+tags: [nlp unicode]
+comments: true
+mathjax: true
+share:
+date: 2019-11-19T10:10:10+21:12
+---
+
+> 本文不对unicode进行科普式的宣讲，主要针对其在文本处理过程中的一些有趣应用进行记录和剖析。
+
+## 0x01. 前言
+
+在日常工作的文本处理过程中，经常会遇到一些利用unicode特性对文本进行处理的技巧。在这篇文章中则主要对其进行一些汇总和剖析。在开始之前，这里对 unicode 一些鲜为人知的概念做一些介绍。
+
+大部分时候，我们都会只认为Unicode只是对字符的一个数字编码，在Python内部，我们可以通过这样的方式，查看一个文本的 unicode 编码：
+
+```python
+a = "母"
+a.encode("raw_unicode_escape")
+# b'\\u2e9f'
+```
+
+但实际上，一个unicode除了其 codepoint 之外，还有很多特殊的属性，而这些属性在很多的NLP处理任务的过程中起到帮助的作用。如下图：
+
+
+<figure>
+	<a href=""><img src="/assets/images/unicode/unicode_property.jpg" alt="" width="500" heigh="500"></a>
+    <figcaption><a href="" title="">unicode的其他属性 </a></figcaption>
+</figure>
+
+
+在这里，我推荐使用这个[站点](https://www.compart.com/en/unicode)来查询unicode的相关属性。从上图可以看出，一个unicode还具备以下常用的属性：
+
+* **Name:** 每个Unicode会有一个独特的名字，后面我们会展示一个根据名字前缀来识别unicode属于哪一种语言的技巧。
+* **Block:** 一个连续的编码范围，具体可以参考：[Wikipedia - Unicode block](https://en.wikipedia.org/wiki/Unicode_block)
+* **Plane:** 具体可以参考：[Wikipedia - Plane (Unicode)](https://en.wikipedia.org/wiki/Plane_(Unicode))
+* **Script:** 每个文字的书写体系，具体可以参考：[Wikipedia - Script(Unicode)](https://en.wikipedia.org/wiki/Script_(Unicode))。
+* **Category:** 类别，待会会详细介绍。
+
+
+## 0x02. Unicode Range
+
+我们都知道unicode利用一个数字来表示每个字符。而实际上，每个书写语言（script）所涉及的文字，都有其独特的unicode范围。因此最直接的一个应用就是利用 unicode range 来判定一个字符 or 文本属于哪一种语言。
+
+在开始之前，我先推荐一个站点：[Code Chars](http://unicode.org/charts/)。这个站点按照不用的书写语言和地域进行分类，列举出每个语言的unicode range。如下图绿框，其中中文script的名字叫做 Unihan。
+
+<figure>
+	<a href=""><img src="/assets/images/unicode/codechar.jpg" alt="" width="700" heigh="400"></a>
+    <figcaption><a href="http://unicode.org/charts/" title="">Code Chars：不同语言的unicode-range</a></figcaption>
+</figure>
+
+在上面站点可以查询到，汉字(Han scirpt)包含以下的block，而每个block的 block-range 可以表示为：
+
+* CJK Unified Ideographs: `U+4E00–U+9FEF`
+* CJK Unified Ideographs Extension A: `U+3400–U+4DB5`
+* CJK Unified Ideographs Extension B: `U+20000–U+2A6D6`
+* CJK Unified Ideographs Extension C: `U+2A700–U+2B734`
+* CJK Unified Ideographs Extension D: `U+2B740–U+2B81D`
+* CJK Unified Ideographs Extension E: `U+2B820–U+2CEA1`
+* CJK Unified Ideographs Extension F: `U+2CEB0–U+2EBE0`
+
+因此，我们可以根据上述的 unicode-range，开开心心的写一个判定是否为汉字的正则表达式
+
+{% highlight python %} 
+HAN_SCRIPT_PAT = re.compile(
+    r'[\u4E00-\u9FEF\u3400-\u4DB5\u20000-\u2A6D6\u2A700-\u2B734'
+    r'\u2B740-\u2B81D\u2D820-\u2CEA1\u2CEB0-\u2EBE0]'
+)
+
+
+def is_chinese_char(c):
+    return bool(HAN_SCRIPT_PAT.match(c))
+
+{% endhighlight %}
+
+然而值得注意的是，这种方法并不算是一种很好的方式。**因为不同文字的unicode范围会有变化**。如果只是一次性的搞一波，那也可以考虑一下。
+
+
+## 0x03. Unicode 的其他属性应用
+
+在这一小节，我们主要讨论unicode的其他属性以及 normalize 的问题，主要涉及 Python 中 `unicodedata` 和 `regrex` 两个标准库。
+
+### 2.1 字符名字(Name)判断：
+
+在第一小节中我们提及到，每个unicode字符都有其独特的名字。在Python中，我们可以通过这样的方式来获取某个unicode字符的名字：
+
+```py
+import unicodedata
+text = "中"
+print(unicodedata.name(text))   # CJK UNIFIED IDEOGRAPH-4E2D
+```
+
+进一步的，我们可以简单来看下多个unicode的名字特点：从下表可以看到：
+* 对于中文字符，其 Unicode 名字都是以 CJK 开头；
+* 对于印地语（天成文），其前缀也基本是以 DEVANAGARI 开头；
+* 对于表情符号，其名字还包含了表情符号本身的文字描述。这额外的描述也可以**在NLP任务过程中作为表情符号的特征进行补充**，让模型能够更好的理解符号本身。
+
+|---------------------------------------------------------|
+|  Character  |               Name                        |
+|-------------+-------------------------------------------|
+|     中      |    CJK UNIFIED IDEOGRAPH-4E2D             |
+|     国      |    CJK UNIFIED IDEOGRAPH-56FD             |
+|     ह       |    DEVANAGARI LETTER HA                   |
+|     💕      |    TWO HEARTS                             |
+|---------------------------------------------------------|
+
+回到判定字符所属的语言任务本身，利用Unicode-range判定法会存在范围变化的问题。那么可以更改为利用名字判断：
+
+```
+def is_chinese_char(c):
+    return unicodedata.name(c).startswith("CJK")
+```
+
+除了利用名字之外，更加规范的做法应该是直接判断该unicode的Script属性（汉字的Script属于`Han`）。可惜 `unicodedata` 这个库不支持。但是可以用 `regrex` 库搞一波：
+
+```
+def is_chinese_char(c):
+    return bool(regrex.match(r"\p{script=han}", c))
+```
+
+### 2.2 字符类别(Category)判断：
+
+在Unicode中，每个字符还会被赋予上Category的属性，而这个属性跟语种是无关的。总体而言，Category一共分为 Letter, Mark, Number, Punctuation, Symbol, Seperator, Other 七大类，
+而每个类别下面还有进一步的二级分类。在 Python 中，我们可以利用 `unicodedata.category` 这个库来获取这个属性;
+
+
+```python
+import unicodedata
+
+rst = []
+for char in "1a天。💕❤️":
+    rst.append("{}:{}".format(char, unicodedata.category(char)))
+
+print(",".join(rst))
+
+# 1:Nd,a:Ll,天:Lo,。:Po,💕:So,❤:So,️:Mn
+
+```
+
+更详细的，我们可以来看看所有Category的类型码和对应信息类别：
+
+<figure>
+	<a href=""><img src="/assets/images/unicode/category.jpg" alt="" width="1000" heigh="1000"></a>
+    <figcaption><a href="http://unicode.org/charts/" title="">二级Category列表，参考[1]</a></figcaption>
+</figure>
+
+一旦知晓了字符的类别，那么在文本处理过程中就有很多技巧可以应用的上的。例如：
+
+* 利用类别中P开头的字符，把标点符号全部筛选出来。
+* 类别N开头的是数字符号，除了常见的阿拉伯数字，还可以将罗马数字、其他语种的数字体、带圆圈的数序序号等也排除出来。
+
+    ```python
+    unicodedata.category("२") == 'Nd'       # 天成文中的数字2
+    unicodedata.category("⑩") == 'Nd'
+    ```
+
+* 利用类别中C类别的字符，可以把文本中一些不可见的控制字符（如"^V, ^I" 或者zero-width的如`\u200d`等字符）给过滤掉：
+
+    ```python
+    text = text.replace("\t", " ")
+    return "".join(ch for ch in text if unicodedata.category(ch)[0] != 'C')
+    ```
+
+在这里，我展示一下 `tensor2tensor` 中计算 BLEU 分数的时候，用于分词的函数 `bleu_tokenizer`:
+
+```
+class UnicodeRegex(object):
+  """Ad-hoc hack to recognize all punctuation and symbols."""
+
+  def __init__(self):
+    # 获取所有的标点符号
+    punctuation = self.property_chars("P")
+    # 标点符号左边不带数字
+    self.nondigit_punct_re = re.compile(r"([^\d])([" + punctuation + r"])")
+    # 标点符号右边不带数字
+    self.punct_nondigit_re = re.compile(r"([" + punctuation + r"])([^\d])")
+    # 所有的符号集合
+    self.symbol_re = re.compile("([" + self.property_chars("S") + "])")
+
+  def property_chars(self, prefix):
+    return "".join(six.unichr(x) for x in range(sys.maxunicode)
+                   if unicodedata.category(six.unichr(x)).startswith(prefix))
+
+
+uregex = UnicodeRegex()
+
+def bleu_tokenize(string):
+  # 粗暴的分割所有除了前后包含数字的标点符号。
+  string = uregex.nondigit_punct_re.sub(r"\1 \2 ", string)
+  string = uregex.punct_nondigit_re.sub(r" \1 \2", string)
+  # 所有的symbol默认分割
+  string = uregex.symbol_re.sub(r" \1 ", string)
+  return string.split()
+```
+
+
+### 2.3 对unicode字符进行normalized：
+
+在某些自然语言处理任务的过程中，会遇到一些神奇的灵异现象。
+例如两个单词 or 字符用肉眼看是完全一模一样的，但是在计算机中读取出来却表示两者不相等。进一步的，当我们查看这个item的编码字符的时候，发现两者确实也不一样。那究竟是什么样的一回事呢？？
+
+```python
+text_a = "ज़म्पा"
+text_b = "ज़म्पा"
+
+print(text_a == text_b)            # False
+print(unicodedata.normalize("NFKD", text_a) == text_b)  # True
+```
+
+事实上，在Unicode的编码中，经常会有一些特殊字符被编码成多种 Unicode 形式。例如：
+字符 `U+00C7` (LATIN CAPITAL LETTER C WITH CEDILLA) 也可以被表示为下面列个字符的组合： `U+0043` (LATIN CAPITAL LETTER C) 和 字符`U+0327` (COMBINING CEDILLA).
+
+这种情况下多发于那些需要包含**音调**的字符体系中（例如印地语、德语、西班牙语等），如以下字符"Ç"。Unicode体系中，即可以用**Compose(组合)**的形式`U+00C7`来表示这个字符。
+也可以使用**Decompose(分离)**分别存储字符(`U+0043`)本身和音调(`U+0327`)本身。
+
+在上面的印地语中，出现问题的主要是因为字符"ज़"，该字符下有一个小点，表示印地语中的一些音调问题（具体参考 [Nuqta](https://en.wikipedia.org/wiki/Nuqta)）。该字符就拥有 Compose 和 Decompose 两种Unicode表示方法，
+因此才会出现上文中字符不等的例子。
+
+在Python中，我们可以利用 `unicodedata.normalize` 函数对字符进行标准化。标准化分为两个方式：
+
+* `unicodedata.normalize("NFKC", text)`: Normal form Composition: 将所有的文本标准化为 Compose 形式。
+* `unicodedata.normalize("NFKD", text)`: Normal form Decomposition: 将所有的文本标准化为 Decompose 形式。
+
+更标准的写法，应该为
+
+```python
+import unicodedata
+def strip_accents(s):
+   return ''.join(c for c in unicodedata.normalize('NFD', s)
+                  if unicodedata.category(c) != 'Mn')
+```
+
+#### 2.3.1 题外话：
+
+在撰写本文的时候，我发现了一些外观长的一模一样，并且通过normalize方法也无法归一化的问题。例如：
+
+```python
+a = "⻢"
+b = "马"
+
+print(a == b)                               # False
+print(a.encode("raw_unicode_escape"))       # b'\\u2ee2'
+print(b.encode("raw_unicode_escape"))       # b'\\u9a6c'
+print(unicodedata.normalize("NFKD", a) == b)    # False
+print(unicodedata.normalize("NFKC", a) == b)    # False
+```
+
+于是我对上述文本中的第一个『马』进行了一番查询（正是文章开头图片的字符），发现：
+
+* 第一个马的Category是一个Symbol，也就是说是一个符号。
+* 第一个马的Block属于Radical-Block，查询了一下，主要是在汉字中用于**偏旁**作用的。
+
+那么，如果在实际应用中，应该如何对这两个字符进行归一化呢？？？ 目前我也没有 idea 。。。。。
+
+## 0x04. Reference:
+
+* [1]. [NLP哪里跑: Unicode相关的一些小知识和工具](http://www.zmonster.me/2018/10/20/nlp-road-3-unicode.html)
+* [2]. [Python - Unicodedata](https://docs.python.org/3/library/unicodedata.html)
