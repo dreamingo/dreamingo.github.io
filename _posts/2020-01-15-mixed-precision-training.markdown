@@ -198,6 +198,12 @@ export TF_ENABLE_AUTO_MIXED_PRECISION=1
 	<figcaption><a href="" title="">Tensor2tensor框架下，各项加速小技巧的加速比值</a>.</figcaption>
 </figure>
 
+下面是实验(英语翻译到印地语机器翻译实验)对比，开启混合精度加速后，在校验集上的一些数据指标（loss，accuracy, approx_bleu_score）等均不受影响：
+
+<figure>
+    <a href=""><img src="/assets/images/half-precision/experiments.jpg" alt="" width="800" heigh="500"></a>
+</figure>
+
 下面是对上述实验报告的一些备注：
 
 * 开启XLA加速后，模型训练速度变慢了许多。原因不明。
@@ -210,6 +216,9 @@ export TF_ENABLE_AUTO_MIXED_PRECISION=1
 
 * T2T开启混合精度加速后，和论文 [Scaling Neural Machine Translation](https://arxiv.org/pdf/1806.00187.pdf) 中的 fairseq 框架相比（t2t 官方中也有不少人指出这个问题），加速比不尽如人意。论文中指出，**同样的模型 fairseq 开启混合精度加速后，加速比能到达 2.9x。**
 * T2T中加速比不尽如人意，可能也有 Tensorflow 的锅。有一些工作指出，tensorflow 中的自动混合加速为了保证通用性，加速方式上做的比较保守，因此加速效果上不佳。有团队基于 Tensorflow 中的 LossScaleOptimizer 进行优化，实现更优的混合精度加速比。
+
+
+
 
 ## 0x05. 引用：
 
